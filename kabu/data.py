@@ -56,7 +56,43 @@ def add_indicators(d, breakout_days=20):
 
 
 FIELDS = ["shortName", "trailingPE", "forwardPE", "priceToBook", "returnOnEquity",
-          "earningsGrowth", "revenueGrowth", "dividendYield", "totalCash", "totalDebt", "marketCap"]
+          "earningsGrowth", "revenueGrowth", "dividendYield", "totalCash", "totalDebt", "marketCap",
+          "trailingEps", "forwardEps", "targetMeanPrice", "numberOfAnalystOpinions", "currentPrice"]
+
+
+def _ok_pe(x):
+    """無料データには株式分割の前後が混ざった変な値があるので、4〜100倍以外は信用しない"""
+    return x is not None and 4 <= x <= 100
+
+
+def per_of(f):
+    """PER。来期の予想利益がある場合は、今期と来期の高い方（＝割高に見える方）を使う。
+    今期の利益が一時的に膨らんでいる会社を「割安」と勘違いしないため"""
+    t, fw = f.get("trailingPE"), f.get("forwardPE")
+    vals = [v for v in (t, fw) if _ok_pe(v)]
+    if vals:
+        return max(vals)
+    return t if t is not None and t > 0 else None
+
+
+def next_year_change(f):
+    """来期の予想利益が今期と比べてどれだけ増える（減る）か。例 -0.6 = 6割減。
+    来期PERが変な値のときや、増減が極端なとき（分割の混ざりが疑われる）は None（判断材料にしない）"""
+    t, fw = f.get("trailingEps"), f.get("forwardEps")
+    if not (t and fw and t > 0 and _ok_pe(f.get("forwardPE"))):
+        return None
+    nx = fw / t - 1
+    return nx if -0.8 <= nx <= 2.0 else None
+
+
+def analyst_upside(f, price=None):
+    """アナリストの目標株価の平均が、今の値段より何%上か（3人以上の予想があるときだけ）"""
+    tp, n = f.get("targetMeanPrice"), f.get("numberOfAnalystOpinions") or 0
+    price = price or f.get("currentPrice")
+    if tp and price and n >= 3:
+        up = tp / price - 1
+        return up if -0.5 <= up <= 0.6 else None  # 極端な差は分割の混ざりを疑って使わない
+    return None
 
 
 def net_cash_ratio(f):
@@ -83,7 +119,7 @@ def load_fundamentals(codes, cache_path, max_age_days=7):
     limit = (datetime.now() - timedelta(days=max_age_days)).isoformat()
     changed = False
     for c in codes:
-        if c in cache and cache[c].get("_at", "") > limit and "marketCap" in cache[c]:
+        if c in cache and cache[c].get("_at", "") > limit and "forwardEps" in cache[c]:
             continue
         try:
             info = yf.Ticker(_ticker(c)).info
@@ -102,7 +138,7 @@ def fundamental_ok(f, rule):
     """良い会社かどうか（ROEが高い・割高すぎない・利益が大きく減っていない）"""
     if not f:
         return False, "データなし"
-    roe, per, pbr, eg = f.get("returnOnEquity"), f.get("trailingPE") or f.get("forwardPE"), f.get("priceToBook"), f.get("earningsGrowth")
+    roe, per, pbr, eg = f.get("returnOnEquity"), per_of(f), f.get("priceToBook"), f.get("earningsGrowth")
     if roe is None or roe < rule["roe_min"]:
         return False, f"ROEが低い({_pct(roe)})"
     if per is None or not (rule["per_min"] < per <= rule["per_max"]):
@@ -111,6 +147,9 @@ def fundamental_ok(f, rule):
         return False, f"PBRが高すぎ({_num(pbr)})"
     if eg is not None and eg < rule["earnings_growth_min"]:
         return False, f"利益が大きく減少({_pct(eg)})"
+    nx = next_year_change(f)
+    if nx is not None and nx < rule.get("next_year_min", -0.3):
+        return False, f"来期の利益が大きく減る見込み({_pct(nx)})"
     rg = f.get("revenueGrowth")
     if rule.get("revenue_growth_min") is not None and (rg is None or rg < rule["revenue_growth_min"]):
         return False, f"売上の伸びが足りない({_pct(rg)})"

@@ -8,13 +8,13 @@
 最後に「どれくらいの量を買うか」を決める：
   期待が織り込まれた割高株や、すでに大きく上がった株は、フルではなく小さめ（半分）にする。
 """
-from .data import net_cash_ratio
+from .data import net_cash_ratio, per_of
 
 
 def evaluate(f, r, cfg, regime_ok):
     """f=企業データ, r=その日の株価・指標。 (視点ごとのコメント, 買う量の倍率) を返す"""
     f = f or {}
-    per = f.get("trailingPE") or f.get("forwardPE")
+    per = per_of(f)
     pbr = f.get("priceToBook")
     roe = f.get("returnOnEquity")
     rg, eg = f.get("revenueGrowth"), f.get("earningsGrowth")
