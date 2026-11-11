@@ -26,8 +26,9 @@ class Engine:
         fee = self._fee(px * shares)
         cost = px * shares + fee
         if cost > self.s["cash"]:
-            shares = int(self.s["cash"] / (px * (1 + self.cfg["fee_rate"])) // 100 * 100)
-            if shares < 100:
+            lot = self.cfg.get("lot", 100)
+            shares = int(self.s["cash"] / (px * (1 + self.cfg["fee_rate"])) // lot * lot)
+            if shares < lot:
                 return
             fee = self._fee(px * shares)
             cost = px * shares + fee
@@ -103,7 +104,8 @@ class Engine:
                 self._sell(ds, code, p["shares"], min(r["Open"], p["stop"]), why)
                 continue
             if not p["partial"] and r["High"] >= p["target"]:
-                half = p["shares"] // 200 * 100 or p["shares"]
+                lot = cfg.get("lot", 100)
+                half = p["shares"] // (2 * lot) * lot or p["shares"]
                 self._sell(ds, code, half, max(r["Open"], p["target"]), "利益確定(半分)")
                 if code not in self.s["positions"]:
                     continue
@@ -154,10 +156,11 @@ class Engine:
                 view = None
                 if cfg.get("use_views", False):
                     view, size = evaluate(fund.get(code), r, cfg, regime_ok)
-                shares = math.floor(eq * cfg["risk_per_trade"] * size / stopdist / 100) * 100
-                shares = min(shares, math.floor(eq * cfg["max_position_pct"] / close / 100) * 100,
-                             math.floor(cash_left / (close * 1.01) / 100) * 100)
-                if shares < 100:
+                lot = cfg.get("lot", 100)   # 100株単位（ふつうの買い方）か、1株単位（ミニ株・S株など）
+                shares = math.floor(eq * cfg["risk_per_trade"] * size / stopdist / lot) * lot
+                shares = min(shares, math.floor(eq * cfg["max_position_pct"] / close / lot) * lot,
+                             math.floor(cash_left / (close * 1.01) / lot) * lot)
+                if shares < lot:
                     continue
                 roundtrip = 2 * shares * close * (cfg["fee_rate"] + cfg["slippage"])
                 if cfg["target_r"] * stopdist * shares < cfg["min_reward_cost_ratio"] * roundtrip:

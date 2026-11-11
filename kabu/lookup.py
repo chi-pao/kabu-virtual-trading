@@ -154,7 +154,9 @@ def analyze(code, d, f, cfg, regime, meta=None, price=None, at="", prev=None, he
         "market": meta.get("market", ""), "sector": meta.get("sector", ""), "size_class": meta.get("size", ""),
         "price": price, "at": at or d.index[-1].strftime("%m/%d"), "chg": price / prev - 1 if prev else 0, "held": held,
         "updated": datetime.now().strftime("%Y-%m-%d %H:%M"),
-        "facts": _facts(f, price, hi, lo, r, v20),
+        "facts": [[f"最低購入金額（{cfg.get('lot', 100)}株）", f"{price * cfg.get('lot', 100):,.0f}円"
+                   + ("（ミニ株・S株なら1株から" + f"{price:,.0f}円）" if cfg.get("lot", 100) > 1 else "")]]
+                 + _facts(f, price, hi, lo, r, v20),
         "turnover": float((d["Close"] * d["Volume"]).tail(20).mean()),   # 1日の売買代金（20日平均）
     }
     if len(d) < 80:

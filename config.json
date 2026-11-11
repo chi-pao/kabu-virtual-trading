@@ -1,8 +1,10 @@
 {
   "_説明": "仮想売買の設定。数字を変えると作戦が変わります。",
-  "capital": 3000000,
+  "capital": 1000000,
   "all_stocks": true,
-  "min_turnover": 500000000,
+  "lot": 100,
+  "liquidity_mult": 100,
+  "min_turnover_floor": 10000000,
 
   "fee_rate": 0.001,
   "fee_min": 0,

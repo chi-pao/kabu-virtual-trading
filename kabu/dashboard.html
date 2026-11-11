@@ -454,6 +454,7 @@ function drawTab() {
   document.getElementById("tabnote").textContent = NOTES[tab] + (S.pick_scope ? "。" + S.pick_scope : "");
   const head = p => `<div class="row"><span><span class="score" style="background:${col(p.score)}">${p.score}</span><b>${p.held ? "★" : ""}${esc(p.name)}</b> <span class="muted">${p.code}</span></span>
       <span>${num(p.price)}${p.chg != null ? ` <small class="${ud(p.chg)}">${pct(p.chg, 1)}</small>` : ""}</span></div>
+      ${p.min_buy ? `<div class="muted">最低購入金額 ${yen(p.min_buy)}${p.affordable === false ? ' <b class="neg">（今の設定の1銘柄の上限より高い）</b>' : ""}</div>` : ""}
       <div class="sbar"><i style="width:${p.score}%;background:${col(p.score)}"></i></div>`;
   const more = p => `<div style="text-align:right;margin-top:3px"><button onclick="event.stopPropagation();openStock('${p.code}')">くわしく見る</button></div>`;
   const box = (p, inner) => `<div class="pk ${p.code === current ? "sel" : ""}" data-code="${p.code}" onclick="loadChart('${p.code}');drawTab()">${head(p)}${inner}${more(p)}</div>`;

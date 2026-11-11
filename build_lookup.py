@@ -89,22 +89,30 @@ def already_today():
 def ranking(results, cfg, held):
     """全銘柄の中から、売買が活発な銘柄だけで「おすすめ」を作り、自動売買の対象リストも作る。
     売買代金が少ない銘柄は、思った値段で売り買いできないことが多いので除く"""
-    mt = cfg.get("min_turnover", 5e8)
-    ok = [o for o in results.values() if o.get("turnover", 0) >= mt and o["price"] >= 100 and "short" in o]
+    # 1回に買う金額が、その株の1日の売買代金の1%以下になる株だけ（自分の注文で値段を動かさない）
+    per_buy = cfg["capital"] * cfg["max_position_pct"]
+    mt = max(cfg.get("min_turnover_floor", 1e7), per_buy * cfg.get("liquidity_mult", 100))
+    lot = cfg.get("lot", 100)
+    for o in results.values():
+        o["min_buy"] = o["price"] * lot
+    ok = [o for o in results.values() if o.get("turnover", 0) >= mt and "short" in o]
     top = lambda key, n=12: sorted([o for o in ok if key in o], key=lambda o: -o[key]["score"])[:n]
-    base = lambda o: {"code": o["code"], "name": o["name"], "price": o["price"], "chg": o["chg"], "held": o["code"] in held}
+    base = lambda o: {"code": o["code"], "name": o["name"], "price": o["price"], "chg": o["chg"], "held": o["code"] in held,
+                      "min_buy": o["min_buy"], "affordable": o["min_buy"] <= per_buy}
+    # 「今すぐ」は実際に買える株だけ（最低購入金額が1銘柄の上限以下）
     now = [{**base(o), "score": o["short"]["score"],
             "checks": [{"label": r["label"], "ok": r["ok"], "note": r["note"]} for r in o["short"]["reasons"]],
             "trigger": o["short"]["trigger"], "plan_stop": o["short"]["plan_stop"],
             "plan_target": o["short"]["plan_target"], "next": o["short"]["next"]}
-           for o in top("short", 30) if o["code"] not in held][:12]
+           for o in top("short", 60) if o["code"] not in held and o["min_buy"] <= per_buy][:12]
     out = {"updated": time.strftime("%Y-%m-%d %H:%M"), "min_turnover": mt, "count": len(ok),
+           "per_buy": per_buy, "lot": lot,
            "tradable": sorted([o["code"], o["name"]] for o in ok),
            "now": now,
            "mid": [{**base(o), "score": o["mid"]["score"], "reasons": o["mid"]["reasons"]} for o in top("mid")],
            "long": [{**base(o), "score": o["long"]["score"], "reasons": o["long"]["reasons"]} for o in top("long")]}
     (ROOT / "結果" / "全銘柄ランキング.json").write_text(json.dumps(out, ensure_ascii=False, default=float), encoding="utf-8")
-    print(f"売買が活発な銘柄: {len(ok)}社（1日の売買代金 {mt / 1e8:.0f}億円以上）")
+    print(f"売買の対象: {len(ok)}社（1日の売買代金 {mt / 1e4:,.0f}万円以上・1回の購入 最大{per_buy / 1e4:,.0f}万円）")
 
 
 def main(local=False):
