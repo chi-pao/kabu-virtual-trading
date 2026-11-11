@@ -41,8 +41,14 @@ BASE = {
 
 
 def universe():
+    """監視中の47社 ＋ 元本に合った値段で、特に売買が活発な株（build_lookup.py が毎日選ぶ）"""
     cfg = json.loads((ROOT / "config.json").read_text(encoding="utf-8"))
-    return dict(cfg["universe"])
+    names = dict(cfg["universe"])
+    rk = ROOT / "結果" / "全銘柄ランキング.json"
+    if rk.exists():
+        for c, n in json.loads(rk.read_text(encoding="utf-8")).get("day_list", []):
+            names.setdefault(c, n)
+    return names
 
 
 def load(period):

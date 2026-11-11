@@ -105,8 +105,12 @@ def ranking(results, cfg, held):
             "trigger": o["short"]["trigger"], "plan_stop": o["short"]["plan_stop"],
             "plan_target": o["short"]["plan_target"], "next": o["short"]["next"]}
            for o in top("short", 60) if o["code"] not in held and o["min_buy"] <= per_buy][:12]
+    # デイトレ用：その日のうちに何度も売り買いされる、特に売買が活発で、100株を買える株（上位80社）
+    dt_buy = cfg["capital"] * 0.3
+    day_list = sorted([o for o in ok if o["min_buy"] <= dt_buy and o["price"] >= 200],
+                      key=lambda o: -o["turnover"])[:80]
     out = {"updated": time.strftime("%Y-%m-%d %H:%M"), "min_turnover": mt, "count": len(ok),
-           "per_buy": per_buy, "lot": lot,
+           "per_buy": per_buy, "lot": lot, "day_list": [[o["code"], o["name"]] for o in day_list],
            "tradable": sorted([o["code"], o["name"]] for o in ok),
            "now": now,
            "mid": [{**base(o), "score": o["mid"]["score"], "reasons": o["mid"]["reasons"]} for o in top("mid")],
