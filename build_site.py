@@ -29,6 +29,11 @@ def main():
 
     print("持ち株・候補をまとめています…")
     dump(DOCS / "data" / "summary.json", dash.api_summary())
+    print("今日のデイトレの途中経過…")
+    try:
+        dump(DOCS / "data" / "live.json", dash.api_live())
+    except Exception as e:
+        print("  途中経過を作れませんでした:", e)
     print("ニュースを集めています…")
     dump(DOCS / "data" / "news.json", dash.news_feed())
     print("チャートのデータを作っています…")

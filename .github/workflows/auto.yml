@@ -4,7 +4,7 @@ name: 仮想売買の自動実行
 
 on:
   schedule:
-    - cron: "*/30 0-6 * * 1-5"   # 平日 9:00〜15:30（日本時間）… 株価とニュースの更新
+    # 取引時間中の更新は live.yml（10分ごと）が行う
     - cron: "30 7 * * 1-5"       # 平日 16:30 … 仮想売買・仮想デイトレを実行
     - cron: "0 9,12 * * 1-5"     # 平日 18:00・21:00 … 予備（GitHubの予約は遅れたり飛んだりするため。処理済みの日は二重に売買しない）
     - cron: "0 1 * * 6"          # 土曜 10:00 … 改善チェック
@@ -44,6 +44,7 @@ jobs:
         run: |
           python paper.py
           python daytrade.py run
+          python build_lookup.py
 
       - name: 改善チェック
         if: github.event.schedule == '0 1 * * 6' || (github.event_name == 'workflow_dispatch' && github.event.inputs.task == 'improve')
@@ -58,7 +59,7 @@ jobs:
         run: |
           git config user.name "kabu-bot"
           git config user.email "kabu-bot@users.noreply.github.com"
-          git add -A docs 仮想売買 デイトレ 結果
+          git add -A docs 仮想売買 デイトレ 結果 気になる銘柄.json
           git diff --cached --quiet && exit 0
           git commit -m "自動更新 $(date '+%Y-%m-%d %H:%M')"
           for i in 1 2 3; do git pull --rebase -X ours && git push && break; sleep 5; done

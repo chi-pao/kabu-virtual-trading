@@ -187,5 +187,84 @@ table{{border-collapse:collapse;width:100%;margin-bottom:18px}}th,td{{border:1px
     print(f"ここまで{s['日数']}日: 損益 {s['損益']:+,.0f}円（取引{s['取引回数']}回）")
 
 
+def live():
+    """今日の仮想デイトレの途中経過（取引時間中に画面で見る用。記録はしない）。
+    株価は約20分遅れなので「20分前までの値動きで、ルールどおりならこうなっている」という状況"""
+    sp = DIR / "state.json"
+    st = json.loads(sp.read_text(encoding="utf-8")) if sp.exists() else None
+    cfg = {**BASE, **(st["cfg"] if st else json.loads((DIR / "使う作戦.json").read_text(encoding="utf-8")))}
+    names, bars, ix, prevc = load("5d")
+    days = days_of(bars)
+    if not days:
+        return {"ok": False, "msg": "株価データを取得できませんでした"}
+    day = days[-1]
+    now = datetime.now(JST)
+    total_before = (st["engine"]["cash"] if st else cfg["capital"]) - cfg["capital"]
+    base = {"ok": True, "date": str(day), "capital": cfg["capital"], "or_end": cfg["or_end"],
+            "last_entry": cfg["last_entry"], "flat_at": cfg["flat_at"], "updated": now.strftime("%H:%M")}
+    # すでに記録済みの日（取引終了後）は、記録をそのまま見せる
+    if st and st.get("last") and pd.Timestamp(st["last"]).date() >= day:
+        trades = [t for t in st["engine"]["trades"] if t["date"] == str(day)]
+        realized = sum(t["pnl"] for t in trades)
+        return {**base, "finished": True, "phase": "この日の取引は終了（記録済み）", "trades": trades[::-1], "open": [],
+                "watch": [], "realized": realized, "unrealized": 0, "total": total_before,
+                "as_of": cfg["flat_at"], "stop_new": False}
+    db = {c: d[d.index.date == day] for c, d in bars.items()}
+    db = {c: d for c, d in db.items() if len(d)}
+    ib = ix[ix.index.date == day]
+    pc = {}
+    for c, s in prevc.items():
+        before = s[s.index < pd.Timestamp(day)]
+        if len(before):
+            pc[c] = float(before.iloc[-1])
+    tr = DayTrader(cfg, {"cash": float(st["engine"]["cash"]) if st else float(cfg["capital"]),
+                         "trades": [], "days": [], "log": [], "fees": 0.0})
+    tr.run_day(day, db, ib, names, pc, live=True)
+    L = tr.live
+    last = L["last_t"] or max((d.index[-1] for d in db.values()), default=None)
+    as_of = last.strftime("%H:%M") if last is not None else "-"
+    hm = last.hour * 60 + last.minute if last is not None else 0
+    toi = lambda s: int(s[:2]) * 60 + int(s[3:])
+    opens, unreal = [], 0.0
+    for code, p in L["pos"].items():
+        d = L["data"][code]
+        px = float(d["Close"].iloc[-1])
+        u = (px - p["entry"]) * p["shares"] * (1 if p["side"] == "買い" else -1)
+        unreal += u
+        opens.append({"code": code, "name": names.get(code, code), "side": p["side"], "shares": p["shares"],
+                      "time": p["time"], "entry": round(p["entry"], 1), "stop": round(p["stop"], 1),
+                      "target": round(p["target"], 1), "price": round(px, 1), "pnl": round(u), "be": p["be"],
+                      "setup": p["setup"]})
+    # まだ買っていない銘柄のうち、朝の高値まであと少しのもの
+    watch = []
+    if toi(cfg["or_end"]) <= hm < toi(cfg["last_entry"]) and not L["stop_new"]:
+        for code, inf in L["info"].items():
+            if inf["done"] or code in L["pos"]:
+                continue
+            px = float(L["data"][code]["Close"].iloc[-1])
+            ok_rng = cfg["min_range"] <= inf["rng"] <= cfg["max_range"] and abs(inf["gap"]) <= cfg["max_gap"]
+            if ok_rng and px < inf["hi"]:
+                watch.append({"code": code, "name": names.get(code, code), "price": round(px, 1),
+                              "line": round(inf["hi"], 1), "dist": inf["hi"] / px - 1})
+        watch.sort(key=lambda w: w["dist"])
+        watch = watch[:6]
+    if last is None:
+        phase = "まだ今日の株価が届いていません（9時すぎから。約20分遅れ）"
+    elif hm < toi(cfg["or_end"]):
+        phase = f"{cfg['or_end']}までは朝の値動きを観察中（この間の高値を上抜けたら買う）"
+    elif L["stop_new"]:
+        phase = "今日は損失上限に達したので、新しく買うのは終了"
+    elif hm < toi(cfg["last_entry"]):
+        phase = f"買うチャンスを探し中（{cfg['last_entry']}まで）"
+    elif hm < toi(cfg["flat_at"]):
+        phase = f"新しく買うのは終了。持ち株は{cfg['flat_at']}までに全部売る"
+    else:
+        phase = "今日の取引は終了（このあと記録されます）"
+    return {**base, "finished": False, "phase": phase, "as_of": as_of, "trades": L["day_trades"][::-1], "open": opens,
+            "pending": [{"name": names.get(o["code"]), "side": o["side"], "shares": o["shares"]} for o in L["pending"]],
+            "watch": watch, "realized": round(L["realized"]), "unrealized": round(unreal),
+            "total": total_before, "stop_new": L["stop_new"]}
+
+
 if __name__ == "__main__":
     {"test": test, "run": run}.get(sys.argv[1] if len(sys.argv) > 1 else "run", run)()

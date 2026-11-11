@@ -1,0 +1,38 @@
+# 取引時間中（平日 9:00〜15:35）、約10分ごとに公開ページを更新し続ける
+# 時刻は世界標準時（日本時間 −9時間）
+name: 取引時間中の画面更新
+
+on:
+  schedule:
+    - cron: "45 23 * * 0-4"   # 平日 8:45 に起動（その日の取引終了まで更新し続ける）
+    - cron: "30 1 * * 1-5"    # 10:30 予備（朝の起動が遅れた・飛んだとき用）
+    - cron: "40 3 * * 1-5"    # 12:40 予備（6時間の上限で途中終了したとき用）
+    - cron: "0 5 * * 1-5"     # 14:00 予備
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: live
+  cancel-in-progress: false   # 動いている間に来た予備は、終わってから動く（時間外ならすぐ終わる）
+
+jobs:
+  live:
+    runs-on: ubuntu-latest
+    timeout-minutes: 350
+    env:
+      TZ: Asia/Tokyo
+      PYTHONIOENCODING: utf-8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -r requirements.txt
+      - name: 取引時間中くり返し更新
+        run: |
+          git config user.name "kabu-bot"
+          git config user.email "kabu-bot@users.noreply.github.com"
+          python live_loop.py

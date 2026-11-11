@@ -20,7 +20,7 @@ import pandas as pd
 import yfinance as yf
 
 sys.path.insert(0, str(Path(__file__).parent))
-from kabu import data, horizon, news
+from kabu import data, horizon, lookup, news
 from kabu.views import evaluate
 
 ROOT = Path(__file__).parent
@@ -209,26 +209,11 @@ def api_summary():
     for w in watch:
         if w["held"]:
             continue
-        d = ind[w["code"]]
-        r = d.iloc[-1]
-        q = data.quality(fund.get(w["code"]), c.get("quality_parts", {"roe": 1, "growth": 1, "netcash": 0.5}))
-        tt = w["to_trigger"]
-        checks = [
-            ("会社選び（PER・ROE・売上の伸び）", w["fund_ok"], 25 if w["fund_ok"] else 0, w["fund_note"]),
-            ("上昇トレンド（株価＞25日平均＞75日平均）", w["trend"] == "上昇", 25 if w["trend"] == "上昇" else 10 if w["trend"] == "もみあい" else 0, w["trend"]),
-            ("買う目安（20日間の高値）に近い", tt is not None and tt <= 0.02,
-             20 if tt is not None and tt <= 0 else 15 if tt is not None and tt <= 0.02 else 8 if tt is not None and tt <= 0.05 else 0,
-             "到達" if tt is not None and tt <= 0 else f"あと{tt * 100:.1f}%" if tt is not None else "-"),
-            ("会社の良さ（ROE・成長・現金）", q > 0.1, max(0, min(15, q * 60)), f"点数 {q:.2f}"),
-            ("勢い（60日の上昇率）", (r["mom60"] or 0) > 0, max(0, min(10, float(r["mom60"] or 0) * 50)), f"{float(r['mom60'] or 0) * 100:+.0f}%"),
-            ("割高・上がりすぎではない", w["size"] >= 1, 5 if w["size"] >= 1 else 0, w["views"].get("結論", "")),
-        ]
-        score = sum(x[2] for x in checks)
-        picks.append({"code": w["code"], "name": w["name"], "price": w["price"], "chg": w["chg"], "score": round(score),
-                      "checks": [{"label": a, "ok": bool(b), "note": n} for a, b, _, n in checks],
+        score, rs, pl = lookup.short_term(fund.get(w["code"]), ind[w["code"]], c, regime, w["price"])
+        picks.append({"code": w["code"], "name": w["name"], "price": w["price"], "chg": w["chg"], "score": score,
+                      "checks": [{"label": x["label"], "ok": x["ok"], "note": x["note"]} for x in rs],
                       "trigger": w["trigger"], "plan_stop": w["plan_stop"], "plan_target": w["plan_target"],
-                      "next": "買い注文を出す候補" if score >= 80 and regime else
-                              "地合いが良くなれば候補" if score >= 80 else "条件がそろうのを待つ"})
+                      "next": pl["next"]})
     picks.sort(key=lambda p: -p["score"])
     picks = picks[:5]
 
@@ -303,6 +288,61 @@ def api_chart(code):
     }
 
 
+def api_live():
+    """今日の仮想デイトレの途中経過（1分ごと）"""
+    import daytrade as dt
+    return cached("live", 60, dt.live)
+
+
+def master_list():
+    return cached("master", 86400, lambda: lookup.master(ROOT / "結果" / "銘柄一覧.json"))
+
+
+def api_lookup(q="", code=""):
+    """気になる銘柄を調べる。候補が複数なら一覧、1つならくわしい結果"""
+    lst = master_list()
+    if not code:
+        hits = lookup.search(q, lst)
+        if len(hits) != 1:
+            return {"matches": hits}
+        code = hits[0]["code"]
+    return cached("lk_" + code, 600, lambda: analyze_code(code, lst))
+
+
+def analyze_code(code, lst=None):
+    c = cfg()
+    meta = next((x for x in (lst or master_list()) if x["code"] == code), {})
+    names = dict(c["universe"])
+    if code in names:
+        meta = {**meta, "name": names[code]}
+    ind, ix = daily()
+    d = ind.get(code)
+    if d is None:
+        p = data.load_prices([code], period="1y")
+        if code not in p:
+            return {"error": f"{code} の株価データが見つかりませんでした"}
+        d = data.add_indicators(p[code], c["breakout_days"])
+    f = data.load_fundamentals([code], ROOT / "結果" / "企業データ.json").get(code)
+    regime = bool(ix["Close"].iloc[-1] > ix["Close"].rolling(75).mean().iloc[-1])
+    intra = intraday()
+    s = intra.get(code)
+    if s is None:
+        try:
+            s = yf.download(f"{code}.T", period="1d", interval="5m", auto_adjust=True, progress=False)
+            s = s.droplevel(1, axis=1) if isinstance(s.columns, pd.MultiIndex) else s
+            s = s.dropna(subset=["Close"])
+            s.index = s.index.tz_convert(JST)
+        except Exception:
+            s = None
+    price, at = (float(s["Close"].iloc[-1]), s.index[-1].strftime("%H:%M")) if s is not None and len(s) else (None, "")
+    st = state()
+    held = code in ((st or {}).get("engine", {}).get("positions", {}))
+    out = lookup.analyze(code, d, f, c, regime, meta, price, at, prev_close(d["Close"], s), held)
+    out["news"] = [{"title": n["title"], "link": n["link"], "time": n["time"], "tone": news.tone(n["title"])}
+                   for n in news.headlines_full(f"{out['name']} 株", days=7, limit=8)]
+    return out
+
+
 class Handler(BaseHTTPRequestHandler):
     def log_message(self, *a):
         pass
@@ -324,6 +364,12 @@ class Handler(BaseHTTPRequestHandler):
                 self._send(json.dumps(api_summary(), ensure_ascii=False, default=float), "application/json")
             elif u.path == "/api/news":
                 self._send(json.dumps(news_feed(), ensure_ascii=False), "application/json")
+            elif u.path == "/api/live":
+                self._send(json.dumps(api_live(), ensure_ascii=False, default=str), "application/json")
+            elif u.path == "/api/lookup":
+                qs = parse_qs(u.query)
+                res = api_lookup(qs.get("q", [""])[0], qs.get("code", [""])[0])
+                self._send(json.dumps(res, ensure_ascii=False, default=float), "application/json")
             elif u.path == "/api/chart":
                 code = parse_qs(u.query).get("code", ["N225"])[0]
                 self._send(json.dumps(api_chart(code), ensure_ascii=False, default=float), "application/json")

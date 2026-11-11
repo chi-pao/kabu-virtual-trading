@@ -31,8 +31,9 @@ class DayTrader:
     def _cost(self, value):
         return value * self.cfg["fee_rate"]
 
-    def run_day(self, day, bars, index_bars, names, prev_close):
-        """day=日付, bars={コード: その日の5分足}, index_bars=日経平均の5分足"""
+    def run_day(self, day, bars, index_bars, names, prev_close, live=False):
+        """day=日付, bars={コード: その日の5分足}, index_bars=日経平均の5分足
+        live=True … 取引時間中の途中経過を見るとき。持ち株を最後に手じまいせず、self.live に残す"""
         cfg = self.cfg
         start_eq = self.s["cash"]
         or_end = pd.Timestamp(f"{day} {cfg['or_end']}").tz_localize("Asia/Tokyo")
@@ -184,6 +185,10 @@ class DayTrader:
                 pending.append({"code": code, "side": side, "risk_ps": risk_ps, "shares": shares, "setup": why})
                 info[code]["done"] = True  # 1銘柄1日1回まで
 
+        if live:
+            self.live = {"pos": pos, "pending": pending, "info": info, "data": data, "realized": realized,
+                         "stop_new": stop_new, "last_t": times[-1] if times else None, "day_trades": day_trades}
+            return realized
         # 念のため、最後まで残った持ち株は最後の足の終値で手じまい
         for code in list(pos):
             d = data[code]
