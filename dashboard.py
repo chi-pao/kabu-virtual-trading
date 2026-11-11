@@ -234,6 +234,18 @@ def api_summary():
     with _lock:
         _cache["pick_names"] = (time.time(), [p["name"] for p in picks[:3]])
 
+    # 仮想デイトレ（別の財布で300万円）の成績
+    dp = ROOT / "デイトレ" / "state.json"
+    dst = json.loads(dp.read_text(encoding="utf-8")) if dp.exists() else None
+    day = None
+    if dst:
+        de = dst["engine"]
+        cap = dst["cfg"].get("capital", 3000000)
+        last = de["days"][-1] if de["days"] else None
+        day = {"total": de["cash"] - cap, "capital": cap, "days": len(de["days"]),
+               "last_date": last["date"] if last else None, "last_pnl": last["pnl"] if last else 0,
+               "trades": de["trades"][-30:][::-1]}
+
     equity = eng["cash"] + mv
     ixs = ix["Close"]
     eq = eng["equity"]
@@ -248,7 +260,7 @@ def api_summary():
         "index": {"price": ix_price, "chg": ix_price / ix_prev - 1, "sma75": float(sma75.iloc[-1]), "regime": regime},
         "macro_score": (st or {}).get("news", {}).get("macro_score"), "last_run": (st or {}).get("last_date"),
         "positions": positions, "orders": orders, "watch": watch, "picks": picks, "mid": mids[:8], "long": longs[:8], "trades": eng["trades"][-30:][::-1],
-        "equity_curve": eq, "bench": bench, "log": eng["log"][-20:][::-1],
+        "equity_curve": eq, "bench": bench, "day": day, "log": eng["log"][-20:][::-1],
         "rules": {"risk": c["risk_per_trade"], "target_r": c["target_r"], "max_pos": c["max_positions"]},
     }
 

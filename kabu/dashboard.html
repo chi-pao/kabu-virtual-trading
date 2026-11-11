@@ -221,6 +221,10 @@ a{color:var(--accent)}
     </div>
   </section>
   <section class="card full">
+    <h2>売買の記録（デイトレ） <span class="muted">その日のうちに必ず売る・中期とは別の300万円</span></h2>
+    <div class="tbl"><table id="dtrades"></table></div>
+  </section>
+  <section class="card full">
     <h2>売買の記録（中期）</h2>
     <div class="tbl"><table id="trades"></table></div>
   </section>
@@ -329,10 +333,12 @@ async function loadSummary() {
   S = await r.json();
   const ix = S.index;
   const k = (l, v, cl = "") => `<div class="k"><span class="l">${l}</span><span class="v ${cl}">${v}</span></div>`;
+  const D = S.day;
   document.getElementById("hdr").innerHTML = `<h1>仮想売買ボード <span class="badge ${S.market === "取引時間中" ? "on" : ""}">${S.market}</span></h1>` +
-    k("資産の合計", yen(S.equity)) +
-    k("損益（手数料込み）", `${S.pnl >= 0 ? "+" : ""}${yen(S.pnl)} <small>${pct(S.pnl / S.capital)}</small>`, cls(S.pnl)) +
-    k("現金", yen(S.cash)) +
+    k("中期の売買：資産", yen(S.equity)) +
+    k("中期の損益", `${S.pnl >= 0 ? "+" : ""}${yen(S.pnl)} <small>${pct(S.pnl / S.capital)}</small>`, cls(S.pnl)) +
+    (D ? k(`デイトレの損益（${D.days}日）`, `${sgn(D.total)} <small>${pct(D.total / D.capital)}</small>`, cls(D.total)) +
+         k(`デイトレ ${D.last_date ? D.last_date.slice(5).replace("-", "/") : ""}`, sgn(D.last_pnl), cls(D.last_pnl)) : "") +
     k("日経平均", `${num(ix.price)} <small class="${ud(ix.chg)}">${pct(ix.chg, 2)}</small>`) +
     `<span class="badge ${ix.regime ? "on" : "off"}">${ix.regime ? "地合い良好：買い可" : "地合い悪化：中期の新規買いお休み"}</span>` +
     k("世界情勢ニュース", S.macro_score == null ? "-" : (S.macro_score > 0 ? "+" : "") + S.macro_score, cls(S.macro_score)) +
@@ -375,6 +381,10 @@ async function loadSummary() {
     S.trades.map(t => `<tr><td>${esc(t.name)}</td><td>${t.entry_date}</td><td>${t.exit_date}</td><td>${t.shares}</td><td>${num(t.entry)}</td><td>${num(t.exit)}</td>
       <td class="${cls(t.pnl)}">${t.pnl >= 0 ? "+" : ""}${num(t.pnl)}</td><td style="text-align:left">${esc(t.reason)}</td></tr>`).join("")
     : '<tr><td class="empty">まだ売買の記録はありません</td></tr>';
+  document.getElementById("dtrades").innerHTML = D && D.trades.length ? "<tr><th>銘柄</th><th>日付</th><th>時間</th><th>株数</th><th>買値</th><th>売値</th><th>損益</th><th>理由</th></tr>" +
+    D.trades.map(t => `<tr><td>${esc(t.name)}</td><td>${t.date.slice(5).replace("-", "/")}</td><td>${t.in_time}→${t.out_time}</td><td>${t.shares}</td><td>${num(t.entry)}</td><td>${num(t.exit)}</td>
+      <td class="${cls(t.pnl)}">${t.pnl >= 0 ? "+" : ""}${num(t.pnl)}</td><td style="text-align:left">${esc(t.reason)}</td></tr>`).join("")
+    : '<tr><td class="empty">まだデイトレの記録はありません</td></tr>';
   document.getElementById("log").textContent = S.log.join("\n") || "まだ記録がありません";
 
   const ec = S.equity_curve;
