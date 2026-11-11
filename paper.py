@@ -38,6 +38,10 @@ def main():
     ind = {c: data.add_indicators(d, cfg["breakout_days"]) for c, d in prices.items()}
     ix_sma = ix["Close"].rolling(75).mean()
     dates = sorted(set().union(*[d.index for d in prices.values()]))
+    # 今日の分は、取引が終わって値段が確定してから（15:40以降）だけ使う
+    now = datetime.now(timezone(timedelta(hours=9)))
+    if now.hour * 60 + now.minute < 15 * 60 + 40:
+        dates = [d for d in dates if d.date() < now.date()]
     latest = dates[-1]
 
     print("企業の数字を確認中…")
