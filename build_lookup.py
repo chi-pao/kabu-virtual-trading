@@ -29,6 +29,10 @@ def dump(path, obj):
     path.write_text(json.dumps(obj, ensure_ascii=False, default=float, separators=(",", ":")), encoding="utf-8")
 
 
+if not shutil.which("git") and Path(r"C:\Program Files\Git\cmd\git.exe").exists():   # このパソコンで動かすとき
+    os.environ["PATH"] += os.pathsep + r"C:\Program Files\Git\cmd"
+
+
 def git(*args, cwd=OUT, check=True):
     return subprocess.run(["git", *args], cwd=cwd, check=check)
 
@@ -82,6 +86,27 @@ def already_today():
         return False
 
 
+def ranking(results, cfg, held):
+    """全銘柄の中から、売買が活発な銘柄だけで「おすすめ」を作り、自動売買の対象リストも作る。
+    売買代金が少ない銘柄は、思った値段で売り買いできないことが多いので除く"""
+    mt = cfg.get("min_turnover", 5e8)
+    ok = [o for o in results.values() if o.get("turnover", 0) >= mt and o["price"] >= 100 and "short" in o]
+    top = lambda key, n=12: sorted([o for o in ok if key in o], key=lambda o: -o[key]["score"])[:n]
+    base = lambda o: {"code": o["code"], "name": o["name"], "price": o["price"], "chg": o["chg"], "held": o["code"] in held}
+    now = [{**base(o), "score": o["short"]["score"],
+            "checks": [{"label": r["label"], "ok": r["ok"], "note": r["note"]} for r in o["short"]["reasons"]],
+            "trigger": o["short"]["trigger"], "plan_stop": o["short"]["plan_stop"],
+            "plan_target": o["short"]["plan_target"], "next": o["short"]["next"]}
+           for o in top("short", 30) if o["code"] not in held][:12]
+    out = {"updated": time.strftime("%Y-%m-%d %H:%M"), "min_turnover": mt, "count": len(ok),
+           "tradable": sorted([o["code"], o["name"]] for o in ok),
+           "now": now,
+           "mid": [{**base(o), "score": o["mid"]["score"], "reasons": o["mid"]["reasons"]} for o in top("mid")],
+           "long": [{**base(o), "score": o["long"]["score"], "reasons": o["long"]["reasons"]} for o in top("long")]}
+    (ROOT / "結果" / "全銘柄ランキング.json").write_text(json.dumps(out, ensure_ascii=False, default=float), encoding="utf-8")
+    print(f"売買が活発な銘柄: {len(ok)}社（1日の売買代金 {mt / 1e8:.0f}億円以上）")
+
+
 def main(local=False):
     if not local and "--force" not in sys.argv and already_today():
         print("今日の分はもう作ってあるので、とばします")
@@ -119,10 +144,12 @@ def main(local=False):
             o["news"] = [{"title": n["title"], "link": n["link"], "time": n["time"], "tone": news.tone(n["title"])}
                          for n in news.headlines_full(f"{o['name']} 株", days=7, limit=8)]
         dump(OUT / f"{code}.json", o)
-        return code
+        return code, o
 
     with ThreadPoolExecutor(8) as ex:
-        done = {c for c in ex.map(one, codes) if c}
+        results = dict(r for r in ex.map(one, codes) if r)
+    done = set(results)
+    ranking(results, cfg, held)
     dump(OUT / "index.json", {"updated": time.strftime("%Y-%m-%d %H:%M"),
                               "list": [[x["code"], x["name"], x["sector"], 1 if x["code"] in done else 0] for x in lst]})
     print(f"完成: {len(done)}銘柄 / 一覧 {len(lst)}銘柄")

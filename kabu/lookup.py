@@ -155,6 +155,7 @@ def analyze(code, d, f, cfg, regime, meta=None, price=None, at="", prev=None, he
         "price": price, "at": at or d.index[-1].strftime("%m/%d"), "chg": price / prev - 1 if prev else 0, "held": held,
         "updated": datetime.now().strftime("%Y-%m-%d %H:%M"),
         "facts": _facts(f, price, hi, lo, r, v20),
+        "turnover": float((d["Close"] * d["Volume"]).tail(20).mean()),   # 1日の売買代金（20日平均）
     }
     if len(d) < 80:
         out["note"] = "上場して間もないなどで株価データが少ないため、点数は出せません"

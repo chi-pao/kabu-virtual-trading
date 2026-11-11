@@ -38,7 +38,7 @@ def main():
     dump(DOCS / "data" / "news.json", dash.news_feed())
     print("チャートのデータを作っています…")
     cfg = dash.cfg()
-    for code in ["N225"] + [c for c, _ in cfg["universe"]]:
+    for code in ["N225"] + [c for c, _ in cfg["universe"]] + dash.extra_codes():
         dump(DOCS / "data" / f"chart_{code}.json", dash.api_chart(code))
 
     # くわしいレポート（あるものだけ）

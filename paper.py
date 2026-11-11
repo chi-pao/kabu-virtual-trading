@@ -29,11 +29,21 @@ def main():
     DIR.mkdir(exist_ok=True)
     cfg = json.loads((ROOT / "config.json").read_text(encoding="utf-8"))
     names = dict(cfg["universe"])
-    codes = list(names)
     state = json.loads(STATE.read_text(encoding="utf-8")) if STATE.exists() else None
+    # 全上場銘柄のうち、売買が活発な銘柄も対象にする（リストは build_lookup.py が毎日作る）
+    rk = ROOT / "結果" / "全銘柄ランキング.json"
+    if cfg.get("all_stocks", True) and rk.exists():
+        for c, n in json.loads(rk.read_text(encoding="utf-8"))["tradable"]:
+            names.setdefault(c, n)
+    for c, p in (state["engine"]["positions"].items() if state else []):
+        names.setdefault(c, p["name"])     # 持っている株は必ず含める
+    codes = list(names)
 
-    print("株価データを取得中…")
-    prices = data.load_prices(codes + [data.INDEX], period="1y")
+    print(f"株価データを取得中…（{len(codes)}銘柄）")
+    prices = {}
+    for i in range(0, len(codes), 400):
+        prices.update(data.load_prices(codes[i:i + 400], period="1y"))
+    prices.update(data.load_prices([data.INDEX], period="1y"))
     ix = prices.pop(data.INDEX)
     ind = {c: data.add_indicators(d, cfg["breakout_days"]) for c, d in prices.items()}
     ix_sma = ix["Close"].rolling(75).mean()
@@ -45,7 +55,7 @@ def main():
     latest = dates[-1]
 
     print("企業の数字を確認中…")
-    fund = data.load_fundamentals(codes, ROOT / "結果" / "企業データ.json")
+    fund = data.load_fundamentals(codes, ROOT / "結果" / "企業データ.json", max_fetch=150)  # 残りは build_lookup.py が少しずつ更新
     fund_ok = {c: data.fundamental_ok(fund.get(c), cfg["fundamental"])[0] for c in codes}
     qual = {c: data.quality(fund.get(c), cfg.get("quality_parts", {})) for c in codes}
 

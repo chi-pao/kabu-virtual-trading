@@ -52,10 +52,31 @@ def state():
     return json.loads(p.read_text(encoding="utf-8")) if p.exists() else None
 
 
+def ranking():
+    """全上場銘柄から選んだおすすめ（build_lookup.py が毎日の取引終了後に作る）"""
+    p = ROOT / "結果" / "全銘柄ランキング.json"
+    return json.loads(p.read_text(encoding="utf-8")) if p.exists() else None
+
+
+def all_names():
+    return {x["code"]: x["name"] for x in master_list()}
+
+
+def extra_codes():
+    """監視中の47銘柄のほかに、チャートを用意する銘柄（全銘柄おすすめの上位と、持ち株）"""
+    c = cfg()
+    base = {x for x, _ in c["universe"]}
+    rk = ranking() or {}
+    st = state()
+    out = [x["code"] for k in ("now", "mid", "long") for x in rk.get(k, [])[:8]]
+    out += list(((st or {}).get("engine", {}).get("positions", {})).keys())
+    return [x for x in dict.fromkeys(out) if x not in base]
+
+
 def daily():
     def load():
         c = cfg()
-        codes = [x for x, _ in c["universe"]]
+        codes = [x for x, _ in c["universe"]] + extra_codes()
         prices = data.load_prices(codes + [data.INDEX], period="1y")
         ix = prices.pop(data.INDEX)
         ind = {k: data.add_indicators(v, c["breakout_days"]) for k, v in prices.items()}
@@ -67,7 +88,7 @@ def intraday():
     """今日の5分足（約20分遅れ）"""
     def load():
         c = cfg()
-        tickers = [f"{x}.T" for x, _ in c["universe"]] + [data.INDEX]
+        tickers = [f"{x}.T" for x in [x for x, _ in c["universe"]] + extra_codes()] + [data.INDEX]
         try:
             df = yf.download(tickers, period="1d", interval="5m", auto_adjust=True, progress=False,
                              group_by="ticker", threads=True)
@@ -172,7 +193,7 @@ def api_summary():
     orders = []
     for o in eng["orders"]:
         price, _ = now_price(o["code"], ind, intra)
-        item = {"side": o["side"], "code": o["code"], "name": names.get(o["code"], o["code"]), "shares": o["shares"],
+        item = {"side": o["side"], "code": o["code"], "name": names.get(o["code"]) or all_names().get(o["code"], o["code"]), "shares": o["shares"],
                 "reason": o["reason"], "price": price}
         if o["side"] == "buy":
             item.update({"ref": o["ref"], "stop": o["ref"] - o["stopdist"], "target": o["ref"] + c["target_r"] * o["stopdist"],
@@ -231,6 +252,24 @@ def api_summary():
         longs.append({**base, "score": s2, "reasons": r2})
     mids.sort(key=lambda x: -x["score"])
     longs.sort(key=lambda x: -x["score"])
+    # 全上場銘柄から選んだおすすめがあれば、そちらを使う（値段だけ今の値段に更新）
+    rk = ranking()
+    scope = "監視中の47銘柄から"
+    if rk:
+        scope = f"全上場銘柄のうち売買が活発な{rk['count']:,}社から（{rk['updated'][5:16]}の終値で採点）"
+
+        def fresh(lst, skip_held=False):
+            out = []
+            for x in lst:
+                held = x["code"] in eng["positions"]
+                if skip_held and held:
+                    continue
+                p, _ = now_price(x["code"], ind, intra)
+                d = ind.get(x["code"])
+                prev = prev_close(d["Close"], intra.get(x["code"])) if d is not None else None
+                out.append({**x, "held": held, "price": p or x["price"], "chg": (p / prev - 1) if p and prev else x.get("chg")})
+            return out
+        picks, mids, longs = fresh(rk["now"], True)[:5], fresh(rk["mid"]), fresh(rk["long"])
     with _lock:
         _cache["pick_names"] = (time.time(), [p["name"] for p in picks[:3]])
 
@@ -260,7 +299,7 @@ def api_summary():
         "index": {"price": ix_price, "chg": ix_price / ix_prev - 1, "sma75": float(sma75.iloc[-1]), "regime": regime},
         "macro_score": (st or {}).get("news", {}).get("macro_score"), "last_run": (st or {}).get("last_date"),
         "positions": positions, "orders": orders, "watch": watch, "picks": picks, "mid": mids[:8], "long": longs[:8], "trades": eng["trades"][-30:][::-1],
-        "equity_curve": eq, "bench": bench, "day": day, "log": eng["log"][-20:][::-1],
+        "equity_curve": eq, "bench": bench, "day": day, "pick_scope": scope, "log": eng["log"][-20:][::-1],
         "rules": {"risk": c["risk_per_trade"], "target_r": c["target_r"], "max_pos": c["max_positions"]},
     }
 
@@ -291,7 +330,7 @@ def api_chart(code):
             intra_c.append({"time": ts, "open": r2(row["Open"]), "high": r2(row["High"]), "low": r2(row["Low"]),
                             "close": r2(row["Close"]), "vol": vol(row["Volume"])})
     return {
-        "code": code, "name": dict(c["universe"]).get(code, "日経平均"),
+        "code": code, "name": "日経平均" if code == "N225" else dict(c["universe"]).get(code) or all_names().get(code, code),
         "candles": candles,
         "sma25": [{"time": t.strftime("%Y-%m-%d"), "value": r2(v)} for t, v in d["sma25"].items() if pd.notna(v)],
         "sma75": [{"time": t.strftime("%Y-%m-%d"), "value": r2(v)} for t, v in d["sma75"].items() if pd.notna(v)],

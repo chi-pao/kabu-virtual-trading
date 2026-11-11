@@ -451,7 +451,7 @@ function setTab(t) {
 const mark = r => r.ok ? '<b class="pos">✓</b>' : r.mid ? '<b style="color:var(--warn)">△</b>' : '<b class="neg">✕</b>';
 function drawTab() {
   if (!S) return;
-  document.getElementById("tabnote").textContent = NOTES[tab];
+  document.getElementById("tabnote").textContent = NOTES[tab] + (S.pick_scope ? "。" + S.pick_scope : "");
   const head = p => `<div class="row"><span><span class="score" style="background:${col(p.score)}">${p.score}</span><b>${p.held ? "★" : ""}${esc(p.name)}</b> <span class="muted">${p.code}</span></span>
       <span>${num(p.price)}${p.chg != null ? ` <small class="${ud(p.chg)}">${pct(p.chg, 1)}</small>` : ""}</span></div>
       <div class="sbar"><i style="width:${p.score}%;background:${col(p.score)}"></i></div>`;
