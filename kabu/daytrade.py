@@ -153,9 +153,9 @@ class DayTrader:
                 setup = None
                 if cfg["strategy"] == "orb":
                     if c > inf["hi"] and c > vw and volok and ix_up:
-                        setup = ("買い", "寄り付き30分の高値を上抜け")
+                        setup = ("買い", f"朝（{cfg['or_end']}まで）の高値を上抜け")
                     elif cfg["allow_short"] and c < inf["lo"] and c < vw and volok and ix_dn:
-                        setup = ("売り", "寄り付き30分の安値を下抜け")
+                        setup = ("売り", f"朝（{cfg['or_end']}まで）の安値を下抜け")
                 elif cfg["strategy"] == "vwap":
                     prev = d[d.index < t]
                     if len(prev) < 6:

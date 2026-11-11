@@ -6,6 +6,7 @@ on:
   schedule:
     - cron: "*/30 0-6 * * 1-5"   # 平日 9:00〜15:30（日本時間）… 株価とニュースの更新
     - cron: "30 7 * * 1-5"       # 平日 16:30 … 仮想売買・仮想デイトレを実行
+    - cron: "0 9,12 * * 1-5"     # 平日 18:00・21:00 … 予備（GitHubの予約は遅れたり飛んだりするため。処理済みの日は二重に売買しない）
     - cron: "0 1 * * 6"          # 土曜 10:00 … 改善チェック
     - cron: "0 */3 * * 0,6"      # 土日 3時間ごと … ニュースの更新
   workflow_dispatch:              # 手動でも動かせる
@@ -39,7 +40,7 @@ jobs:
         run: sudo apt-get install -y -qq fonts-noto-cjk > /dev/null
 
       - name: 仮想売買・仮想デイトレ
-        if: github.event.schedule == '30 7 * * 1-5' || (github.event_name == 'workflow_dispatch' && github.event.inputs.task == 'trade')
+        if: github.event.schedule == '30 7 * * 1-5' || github.event.schedule == '0 9,12 * * 1-5' || (github.event_name == 'workflow_dispatch' && github.event.inputs.task == 'trade')
         run: |
           python paper.py
           python daytrade.py run
