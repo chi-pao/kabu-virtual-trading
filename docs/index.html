@@ -26,7 +26,9 @@ h1{font-size:16px;margin:0}
 .dot.p{background:var(--good)}.dot.m{background:var(--bad)}.dot.mm{background:var(--bad);box-shadow:0 0 0 3px rgba(198,40,40,.25)}
 .up{color:var(--up)}.down{color:var(--down)}.pos{color:var(--good)}.neg{color:var(--bad)}
 /* スクロールしなくても見える部分 */
-.top{display:grid;grid-template-columns:minmax(0,1fr) minmax(300px,0.8fr) minmax(280px,0.7fr);gap:10px;padding:10px 12px;height:calc(100vh - 80px);min-height:520px}
+.tabs{display:flex;gap:4px;margin-bottom:6px}.tabs button{flex:1}
+.rs{font-size:11px;line-height:1.55;margin-top:3px;display:none}.pk.sel .rs,.pk:first-child .rs{display:block}
+.top{display:grid;grid-template-columns:minmax(0,1fr) minmax(320px,0.95fr) minmax(220px,0.45fr);gap:10px;padding:10px 12px;height:calc(100vh - 80px);min-height:520px}
 @media(max-width:1200px){.top{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}.top>.newsbox{grid-column:1/-1;height:300px}}
 @media(max-width:800px){.top{grid-template-columns:1fr;height:auto}.chartcard{height:60vh}}
 .card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:10px 12px;min-height:0}
@@ -104,7 +106,12 @@ pre{white-space:pre-wrap;font-size:12px;color:var(--sub);margin:0;max-height:240
       <div id="orders"></div>
     </section>
     <section class="card">
-      <h2>今いちばん良いと思う銘柄 <span class="muted">このツールの売買ルールで100点満点採点</span></h2>
+      <h2>おすすめ銘柄 <span class="muted" id="tabnote"></span></h2>
+      <div class="tabs">
+        <button id="t-now" class="sel" onclick="setTab('now')">今すぐの買い候補</button>
+        <button id="t-mid" onclick="setTab('mid')">中期（数週間〜数か月）</button>
+        <button id="t-long" onclick="setTab('long')">長期（1年以上）</button>
+      </div>
       <div class="picks" id="picksbox"></div>
     </section>
   </div>
@@ -266,15 +273,7 @@ async function loadSummary() {
       <div class="muted">${esc(o.reason)}</div></div>`).join("")
     : `<div class="muted" style="margin-top:4px">次の注文予定：なし（前回の自動売買：${S.last_run || "まだ"}）</div>`;
 
-  const col = s => s >= 80 ? "var(--good)" : s >= 60 ? "#b26a00" : "var(--sub)";
-  document.getElementById("picksbox").innerHTML = S.picks.length ? S.picks.map(p => `
-    <div class="pk ${p.code === current ? "sel" : ""}" data-code="${p.code}" onclick="loadChart('${p.code}')">
-      <div class="row"><span><span class="score" style="background:${col(p.score)}">${p.score}</span><b>${esc(p.name)}</b> <span class="muted">${p.code}</span></span>
-        <span>${num(p.price)} <small class="${ud(p.chg)}">${pct(p.chg, 1)}</small></span></div>
-      <div class="sbar"><i style="width:${p.score}%;background:${col(p.score)}"></i></div>
-      <div class="row muted"><span>${esc(p.next)}</span><span>目安 ${num(p.trigger)}・損切 ${num(p.plan_stop)}・利確 ${num(p.plan_target)}</span></div>
-      <div class="chk">${p.checks.map(c => `${c.ok ? '<b class="pos">✓</b>' : '<b class="neg">✕</b>'} ${esc(c.label)}：${esc(c.note)}`).join("<br>")}</div>
-    </div>`).join("") : '<div class="empty">候補を計算中…</div>';
+  drawTab();
 
   document.getElementById("watch").innerHTML = "<tr><th>銘柄</th><th>今の値段</th><th>前日比</th><th>流れ</th><th>会社選び</th><th>買う目安</th><th>あと</th><th>損切り予定</th><th>利確予定</th><th>買う量</th><th>PER</th><th>ROE</th></tr>" +
     S.watch.map(w => `<tr class="click" onclick="loadChart('${w.code}');scrollTo({top:0,behavior:'smooth'})" title="${esc(Object.entries(w.views).map(([k, v]) => k + "：" + v).join("\n"))}">
@@ -298,6 +297,43 @@ async function loadSummary() {
     options: {responsive: true, maintainAspectRatio: false, animation: false, plugins: {legend: {display: false}},
       scales: {y: {ticks: {callback: v => (v / 10000).toFixed(0) + "万"}}}}});
   drawPicks();
+}
+
+/* ---------- おすすめ銘柄（今すぐ／中期／長期） ---------- */
+let tab = "now";
+const col = s => s >= 80 ? "var(--good)" : s >= 60 ? "#b26a00" : "var(--sub)";
+const NOTES = {
+  now: "このツールの売買ルールにどれだけ当てはまるか（買うタイミング重視）",
+  mid: "業績の伸び・株価の流れ・ROE・割安さ・上がりすぎ・配当で採点",
+  long: "ROE・財務の強さ・割安さ・成長・配当・1年の株価で採点",
+};
+function setTab(t) {
+  tab = t;
+  ["now", "mid", "long"].forEach(k => document.getElementById("t-" + k).classList.toggle("sel", k === t));
+  drawTab();
+}
+function drawTab() {
+  if (!S) return;
+  document.getElementById("tabnote").textContent = NOTES[tab];
+  const head = p => `<div class="row"><span><span class="score" style="background:${col(p.score)}">${p.score}</span><b>${p.held ? "★" : ""}${esc(p.name)}</b> <span class="muted">${p.code}</span></span>
+      <span>${num(p.price)}${p.chg != null ? ` <small class="${ud(p.chg)}">${pct(p.chg, 1)}</small>` : ""}</span></div>
+      <div class="sbar"><i style="width:${p.score}%;background:${col(p.score)}"></i></div>`;
+  const box = (p, inner) => `<div class="pk ${p.code === current ? "sel" : ""}" data-code="${p.code}" onclick="loadChart('${p.code}');drawTab()">${head(p)}${inner}</div>`;
+  let html;
+  if (tab === "now") {
+    html = S.picks.map(p => box(p, `
+      <div class="row muted"><span>${esc(p.next)}</span><span>目安 ${num(p.trigger)}・損切 ${num(p.plan_stop)}・利確 ${num(p.plan_target)}</span></div>
+      <div class="chk">${p.checks.map(c => `${c.ok ? '<b class="pos">✓</b>' : '<b class="neg">✕</b>'} ${esc(c.label)}：${esc(c.note)}`).join("<br>")}</div>`)).join("");
+  } else {
+    const list = tab === "mid" ? S.mid : S.long;
+    html = (list || []).map(p => {
+      const good = p.reasons.filter(r => r.ok).map(r => r.text.split("：")[0]);
+      return box(p, `<div class="muted">強み：${esc(good.join("・") || "目立った強みなし")}</div>
+        <div class="rs">${p.reasons.map(r => `${r.ok ? '<b class="pos">✓</b>' : r.mid ? '<b style="color:#b26a00">△</b>' : '<b class="neg">✕</b>'} ${esc(r.text)} <span class="muted">${r.pts}/${r.max}点</span>`).join("<br>")}</div>`);
+    }).join("");
+  }
+  document.getElementById("picksbox").innerHTML = (html || '<div class="empty">計算中…</div>') +
+    '<div class="muted" style="margin-top:4px">数字から機械的に採点した参考値です。買うことをすすめるものではありません。</div>';
 }
 
 /* ---------- ニュース ---------- */
