@@ -1,14 +1,18 @@
 """公開ページの「銘柄を調べる」用のデータを作る（毎日の取引終了後に GitHub が実行）
 
-ネット公開版はその場で計算できないので、あらかじめ計算しておく：
-  ・TOPIX500（大型〜中型の約500社）＋ 監視中の銘柄 ＋ 気になる銘柄.json に入っている銘柄
-  ・それ以外の銘柄は、パソコンの画面（画面を開く.bat）ならその場で調べられる
-使い方: py build_lookup.py            … 全部作り直す
-        py build_lookup.py 7203 6758  … その銘柄を「気になる銘柄」に追加して作る
+ネット公開版はその場で計算できないので、上場している全銘柄（約3,700社）をあらかじめ計算しておく。
+データは量が多いので、ふだんの保存場所（main）ではなく、毎日上書きする別の場所
+（lookup-data という枝）に置く。こうすると、保存の履歴がふくらまない。
+
+使い方: py build_lookup.py            … 全銘柄を作り直して公開
+        py build_lookup.py --local    … 作るだけ（公開しない。_lookup フォルダに出る）
 """
 import json
-import re
+import os
+import shutil
+import subprocess
 import sys
+import time
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
@@ -16,64 +20,116 @@ sys.path.insert(0, str(Path(__file__).parent))
 from kabu import data, lookup, news
 
 ROOT = Path(__file__).parent
-OUT = ROOT / "docs" / "data" / "lookup"
-FAV = ROOT / "気になる銘柄.json"
+OUT = ROOT / "_lookup"
+BRANCH = "lookup-data"
+FETCH_PER_DAY = int(os.environ.get("FETCH_PER_DAY", "900"))   # 企業データを1日に取り直す数（1週間で全銘柄が一回り）
 
 
 def dump(path, obj):
     path.write_text(json.dumps(obj, ensure_ascii=False, default=float, separators=(",", ":")), encoding="utf-8")
 
 
-def main(add=()):
+def git(*args, cwd=OUT, check=True):
+    return subprocess.run(["git", *args], cwd=cwd, check=check)
+
+
+def remote_url():
+    tok, repo = os.environ.get("GH_TOKEN"), os.environ.get("GITHUB_REPOSITORY")
+    if tok and repo:
+        return f"https://x-access-token:{tok}@github.com/{repo}.git"
+    return subprocess.run(["git", "remote", "get-url", "origin"], cwd=ROOT, capture_output=True, text=True).stdout.strip()
+
+
+def publish():
+    """_lookup フォルダの中身を、履歴なし（1回分だけ）で lookup-data に上書きする"""
+    shutil.rmtree(OUT / ".git", ignore_errors=True)
+    git("init", "-q")
+    git("checkout", "-q", "-b", BRANCH)
+    git("config", "user.name", "kabu-bot")
+    git("config", "user.email", "kabu-bot@users.noreply.github.com")
+    git("add", "-A")
+    git("commit", "-q", "-m", f"銘柄データ {time.strftime('%Y-%m-%d %H:%M')}")
+    git("push", "-q", "-f", remote_url(), f"{BRANCH}:{BRANCH}")
+    shutil.rmtree(OUT / ".git", ignore_errors=True)
+
+
+def load_prices_chunked(codes, size=400):
+    out = {}
+    for i in range(0, len(codes), size):
+        part = codes[i:i + size]
+        for _ in range(3):
+            try:
+                out.update(data.load_prices(part, period="1y"))
+                break
+            except Exception as e:
+                print("  株価の取得をやり直します:", e)
+                time.sleep(10)
+        print(f"  株価 {min(i + size, len(codes))}/{len(codes)}")
+    return out
+
+
+def already_today():
+    """今日の取引終了後（15:30以降）に作ったデータがもう公開されていれば True（予備の実行で二度作らない）"""
+    repo = os.environ.get("GITHUB_REPOSITORY")
+    if not repo:
+        return False
+    try:
+        import urllib.request
+        with urllib.request.urlopen(f"https://raw.githubusercontent.com/{repo}/{BRANCH}/index.json", timeout=30) as r:
+            up = json.loads(r.read().decode("utf-8")).get("updated", "")
+        return up >= time.strftime("%Y-%m-%d") + " 15:30"
+    except Exception:
+        return False
+
+
+def main(local=False):
+    if not local and "--force" not in sys.argv and already_today():
+        print("今日の分はもう作ってあるので、とばします")
+        return
     cfg = json.loads((ROOT / "config.json").read_text(encoding="utf-8"))
-    OUT.mkdir(parents=True, exist_ok=True)
+    OUT.mkdir(exist_ok=True)
+    for p in OUT.glob("*.json"):
+        p.unlink()
     lst = lookup.master(ROOT / "結果" / "銘柄一覧.json")
     known = {x["code"]: x for x in lst}
-    fav = json.loads(FAV.read_text(encoding="utf-8")) if FAV.exists() else []
-    for c in add:
-        c = c.strip().upper()
-        if re.fullmatch(r"[0-9][0-9A-Z]{3}", c) and c in known and c not in fav:
-            fav.append(c)
-    FAV.write_text(json.dumps(fav, ensure_ascii=False, indent=1), encoding="utf-8")
-
     names = dict(cfg["universe"])
-    if add:   # 追加だけのときは、その銘柄だけ作る
-        codes = [c.strip().upper() for c in add if c.strip().upper() in known]
-    else:
-        big = [x["code"] for x in lst if x["size"] in ("TOPIX Core30", "TOPIX Large70", "TOPIX Mid400")]
-        codes = list(dict.fromkeys(list(names) + fav + big))
+    codes = list(dict.fromkeys(list(names) + [x["code"] for x in lst]))
     print(f"{len(codes)}銘柄を計算します…")
-    prices = data.load_prices(codes + [data.INDEX], period="1y")
-    ix = prices.pop(data.INDEX)
+    prices = load_prices_chunked(codes)
+    ix = data.load_prices([data.INDEX], period="1y")[data.INDEX]
     regime = bool(ix["Close"].iloc[-1] > ix["Close"].rolling(75).mean().iloc[-1])
-    fund = data.load_fundamentals(codes, ROOT / "結果" / "企業データ.json")
+    fund = data.load_fundamentals(codes, ROOT / "結果" / "企業データ.json", max_fetch=FETCH_PER_DAY)
     st_path = ROOT / "仮想売買" / "state.json"
     held = json.loads(st_path.read_text(encoding="utf-8"))["engine"]["positions"] if st_path.exists() else {}
-
-    # ニュースは件数が多いと時間がかかるので、監視中・気になる銘柄だけ
-    news_for = set(names) | set(fav)
 
     def one(code):
         d = prices.get(code)
         if d is None or len(d) < 30:
             return None
         meta = {**known.get(code, {}), **({"name": names[code]} if code in names else {})}
-        o = lookup.analyze(code, data.add_indicators(d, cfg["breakout_days"]), fund.get(code), cfg, regime,
-                           meta, held=code in held)
-        if code in news_for:
+        try:
+            o = lookup.analyze(code, data.add_indicators(d, cfg["breakout_days"]), fund.get(code), cfg, regime,
+                               meta, held=code in held)
+        except Exception as e:
+            print(f"  {code}: 計算できませんでした ({e})")
+            return None
+        if not fund.get(code):
+            o["note"] = "PER・ROEなどの企業データはまだ取得待ちです（数日のうちに入ります）。今は株価の動きだけで採点しています"
+        if code in names:   # ニュースは時間がかかるので、監視中の銘柄だけ（他はリンクで探す）
             o["news"] = [{"title": n["title"], "link": n["link"], "time": n["time"], "tone": news.tone(n["title"])}
                          for n in news.headlines_full(f"{o['name']} 株", days=7, limit=8)]
         dump(OUT / f"{code}.json", o)
         return code
 
-    with ThreadPoolExecutor(6) as ex:
-        done = [c for c in ex.map(one, codes) if c]
-    # 検索用の一覧（全上場銘柄。データがあるものに印）
-    have = {p.stem for p in OUT.glob("*.json") if p.stem != "index"}
-    dump(OUT / "index.json", {"list": [[x["code"], x["name"], x["sector"], 1 if x["code"] in have else 0] for x in lst],
-                              "fav": fav})
-    print(f"完成: {len(done)}銘柄（調べられる銘柄の合計 {len(have)}）")
+    with ThreadPoolExecutor(8) as ex:
+        done = {c for c in ex.map(one, codes) if c}
+    dump(OUT / "index.json", {"updated": time.strftime("%Y-%m-%d %H:%M"),
+                              "list": [[x["code"], x["name"], x["sector"], 1 if x["code"] in done else 0] for x in lst]})
+    print(f"完成: {len(done)}銘柄 / 一覧 {len(lst)}銘柄")
+    if not local:
+        publish()
+        print("公開しました（lookup-data）")
 
 
 if __name__ == "__main__":
-    main(sys.argv[1:])
+    main(local="--local" in sys.argv)

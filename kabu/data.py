@@ -112,24 +112,35 @@ def quality(f, w):
     return w.get("roe", 0) * roe + w.get("growth", 0) * growth + w.get("netcash", 0) * nc
 
 
-def load_fundamentals(codes, cache_path, max_age_days=7):
-    """PER・PBR・ROEなど。1週間に1回だけ取り直す"""
+def load_fundamentals(codes, cache_path, max_age_days=7, max_fetch=None):
+    """PER・PBR・ROEなど。1週間に1回だけ取り直す。
+    max_fetch … 1回に取り直す最大の銘柄数（全銘柄のときは、古い順に少しずつ取り直す）"""
     cache_path = Path(cache_path)
     cache = json.loads(cache_path.read_text(encoding="utf-8")) if cache_path.exists() else {}
     limit = (datetime.now() - timedelta(days=max_age_days)).isoformat()
-    changed = False
-    for c in codes:
-        if c in cache and cache[c].get("_at", "") > limit and "forwardEps" in cache[c]:
-            continue
+    todo = [c for c in codes if not (c in cache and cache[c].get("_at", "") > limit and "forwardEps" in cache[c])]
+    todo.sort(key=lambda c: cache.get(c, {}).get("_at", ""))   # まだ無い銘柄 → 古い銘柄の順
+    if max_fetch is not None:
+        todo = todo[:max_fetch]
+    fails = 0
+    for i, c in enumerate(todo, 1):
         try:
             info = yf.Ticker(_ticker(c)).info
             cache[c] = {k: info.get(k) for k in FIELDS}
             cache[c]["_at"] = datetime.now().isoformat()
-            changed = True
-            time.sleep(0.3)
+            fails = 0
+            time.sleep(0.2)
         except Exception as e:  # 取れなかった銘柄は前回の値を使う
+            fails += 1
             print(f"  {c}: 企業データを取得できませんでした ({e})")
-    if changed:
+            if fails >= 20:      # 続けて失敗＝取りすぎで一時的に止められている。残りは次回
+                print("  続けて失敗したので、残りは次回にします")
+                break
+            time.sleep(2)
+        if i % 100 == 0:
+            cache_path.write_text(json.dumps(cache, ensure_ascii=False, indent=1), encoding="utf-8")
+            print(f"  企業データ {i}/{len(todo)}")
+    if todo:
         cache_path.write_text(json.dumps(cache, ensure_ascii=False, indent=1), encoding="utf-8")
     return cache
 

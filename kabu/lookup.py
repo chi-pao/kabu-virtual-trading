@@ -23,12 +23,39 @@ def _norm(s):
     return "".join(chr(ord(ch) + 0x60) if "ぁ" <= ch <= "ゖ" else ch for ch in s)
 
 
+_KANA = {}
+for _cons, _row in [("", "アイウエオァィゥェォヲーッャュョヮ"), ("k", "カキクケコヵヶ"), ("g", "ガギグゲゴ"), ("s", "サシスセソザズゼゾ"),
+                    ("j", "ジ"), ("t", "タテトツ"), ("c", "チ"), ("d", "ダヂヅデド"), ("n", "ナニヌネノン"), ("h", "ハヒヘホ"),
+                    ("f", "フ"), ("b", "バビブベボヴ"), ("p", "パピプペポ"), ("m", "マミムメモ"), ("y", "ヤユヨ"),
+                    ("r", "ラリルレロ"), ("w", "ワ")]:
+    for _ch in _row:
+        _KANA[_ch] = _cons
+
+
+def skeleton(s):
+    """カタカナと英語の社名を、子音だけの並びにそろえる（例：サンサン と Sansan → snsn）"""
+    s = _norm(s)
+    if re.search(r"[ァ-ヶー]", s):
+        out = "".join(_KANA.get(ch, "") for ch in s if "ァ" <= ch <= "ヶ" or ch == "ー")
+    else:
+        s = re.sub(r"[^a-z]", "", s)
+        for a, b in [("ph", "f"), ("th", "s"), ("sh", "s"), ("ch", "c"), ("ck", "k"), ("q", "k"), ("x", "ks"),
+                     ("l", "r"), ("v", "b"), ("z", "s")]:
+            s = s.replace(a, b)
+        s = re.sub(r"c(?=[eiy])", "s", s).replace("c", "k")
+        s = re.sub(r"m(?=[bp])", "n", s)
+        s = re.sub(r"(?<=[^aeiou])h", "", s)
+        s = re.sub(r"[wy](?![aeiou])", "", s)
+        out = re.sub(r"[aeiouy]", "", s)
+    return re.sub(r"(.)\1+", r"\1", out)
+
+
 def master(cache_path, max_age_days=30):
     """[{code, name, market, sector, size}]（国内の株だけ）。取れないときは前回の一覧を使う"""
     p = Path(cache_path)
     old = json.loads(p.read_text(encoding="utf-8")) if p.exists() else None
     if old and old.get("_at", "") > (datetime.now() - timedelta(days=max_age_days)).isoformat():
-        return old["list"]
+        return [x for x in old["list"] if len(x["code"]) == 4]
     try:
         df = pd.read_excel(JPX_URL, dtype=str)
         df = df[df["市場・商品区分"].str.contains("内国株式", na=False)]
@@ -36,7 +63,7 @@ def master(cache_path, max_age_days=30):
                 "market": r["市場・商品区分"].replace("（内国株式）", ""), "sector": r["33業種区分"],
                 "size": r["規模区分"]} for _, r in df.iterrows()]
         p.write_text(json.dumps({"_at": datetime.now().isoformat(), "list": lst}, ensure_ascii=False), encoding="utf-8")
-        return lst
+        return [x for x in lst if len(x["code"]) == 4]   # 5けたは優先株などの特殊な株なので除く
     except Exception as e:
         print(f"  銘柄一覧を取得できませんでした ({e})")
         return old["list"] if old else []
@@ -54,6 +81,13 @@ def search(q, lst, limit=20):
             return hit
     hits = [x for x in lst if qn in _norm(x["name"])]
     hits.sort(key=lambda x: (not _norm(x["name"]).startswith(qn), len(x["name"])))
+    if len(hits) < limit and re.fullmatch(r"[ァ-ヶー]+", qn):   # カタカナで英語名の会社も探す
+        sk = skeleton(qn)
+        if len(sk) >= 2:
+            seen = {x["code"] for x in hits}
+            more = [x for x in lst if x["code"] not in seen and not re.search(r"[ァ-ヶ]", x["name"])
+                    and skeleton(x["name"]).startswith(sk)]
+            hits += sorted(more, key=lambda x: len(x["name"]))
     return hits[:limit]
 
 

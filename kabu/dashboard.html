@@ -476,9 +476,27 @@ function drawTab() {
 
 /* ---------- 気になる銘柄を調べる ---------- */
 const norm = s => String(s).normalize("NFKC").toLowerCase().replace(/\s/g, "").replace(/[ぁ-ゖ]/g, ch => String.fromCharCode(ch.charCodeAt(0) + 0x60));
+// カタカナと英語の社名を子音だけにそろえる（サンサン と Sansan など）。kabu/lookup.py の skeleton と同じ
+const KANA = {};
+[["", "アイウエオァィゥェォヲーッャュョヮ"], ["k", "カキクケコヵヶ"], ["g", "ガギグゲゴ"], ["s", "サシスセソザズゼゾ"], ["j", "ジ"],
+ ["t", "タテトツ"], ["c", "チ"], ["d", "ダヂヅデド"], ["n", "ナニヌネノン"], ["h", "ハヒヘホ"], ["f", "フ"], ["b", "バビブベボヴ"],
+ ["p", "パピプペポ"], ["m", "マミムメモ"], ["y", "ヤユヨ"], ["r", "ラリルレロ"], ["w", "ワ"]].forEach(([c, row]) => [...row].forEach(ch => KANA[ch] = c));
+function skeleton(s) {
+  s = norm(s); let out;
+  if (/[ァ-ヶー]/.test(s)) out = [...s].filter(ch => (ch >= "ァ" && ch <= "ヶ") || ch === "ー").map(ch => KANA[ch] ?? "").join("");
+  else {
+    s = s.replace(/[^a-z]/g, "");
+    [["ph", "f"], ["th", "s"], ["sh", "s"], ["ch", "c"], ["ck", "k"], ["q", "k"], ["x", "ks"], ["l", "r"], ["v", "b"], ["z", "s"]].forEach(([a, b]) => s = s.split(a).join(b));
+    s = s.replace(/c(?=[eiy])/g, "s").replace(/c/g, "k").replace(/m(?=[bp])/g, "n").replace(/([^aeiou])h/g, "$1").replace(/[wy](?![aeiou])/g, "");
+    out = s.replace(/[aeiouy]/g, "");
+  }
+  return out.replace(/(.)\1+/g, "$1");
+}
+// 全銘柄のデータは、毎日上書きされる別の置き場所（lookup-data）にある
+const LK = () => `https://raw.githubusercontent.com/${location.hostname.split(".")[0]}/${location.pathname.split("/")[1]}/lookup-data/`;
 let INDEX = null;
 async function staticIndex() {
-  if (!INDEX) { const r = await fetch("data/lookup/index.json", {cache: "no-store"}); INDEX = await r.json(); }
+  if (!INDEX) { const r = await fetch(LK() + "index.json"); INDEX = await r.json(); }
   return INDEX;
 }
 function openModal(html) {
@@ -510,6 +528,11 @@ async function doSearch() {
     let hits = /^[0-9][0-9A-Z]{3}$/.test(code) ? ix.list.filter(x => x[0] === code) : [];
     if (!hits.length) hits = ix.list.filter(x => norm(x[1]).includes(qn))
       .sort((a, b) => (norm(b[1]).startsWith(qn) - norm(a[1]).startsWith(qn)) || (b[3] - a[3]) || a[1].length - b[1].length).slice(0, 20);
+    if (hits.length < 20 && /^[ァ-ヶー]+$/.test(qn)) {   // カタカナで、英語名の会社も探す
+      const sk = skeleton(qn);
+      if (sk.length >= 2) hits = hits.concat(ix.list.filter(x => !hits.includes(x) && !/[ァ-ヶ]/.test(x[1]) && skeleton(x[1]).startsWith(sk))
+        .sort((a, b) => a[1].length - b[1].length)).slice(0, 20);
+    }
     if (hits.length === 1) return openStock(hits[0][0], hits[0]);
     showMatches(q, hits);
   } catch (e) { openModal(`<div class="empty">調べられませんでした（${esc(e)}）</div>`); }
@@ -526,20 +549,12 @@ async function openStock(code, hit) {
     if (!STATIC) { const r = await fetch("/api/lookup?code=" + code); return showStock(await r.json()); }
     const ix = await staticIndex();
     hit = hit || ix.list.find(x => x[0] === code);
-    if (hit && !hit[3]) return showRequest(hit);
-    const r = await fetch(`data/lookup/${code}.json`, {cache: "no-store"});
-    if (!r.ok) return showRequest(hit || [code, code, "", 0]);
+    const r = hit && !hit[3] ? null : await fetch(LK() + code + ".json");
+    if (!r || !r.ok) return openModal(`<h3>${esc(hit ? hit[1] : code)} <span class="muted">${code}</span></h3>
+      <p>この銘柄は、株価のデータが少ない（上場したばかり・取引がとても少ない など）ため、計算できませんでした。</p>
+      <div class="muted">新しく上場した銘柄は、データがたまると自動で見られるようになります。</div>`);
     showStock(await r.json());
   } catch (e) { openModal(`<div class="empty">読み込めませんでした（${esc(e)}）</div>`); }
-}
-function showRequest(h) {
-  const owner = location.hostname.split(".")[0], repo = location.pathname.split("/")[1];
-  const url = `https://github.com/${owner}/${repo}/issues/new?title=${encodeURIComponent("調べて " + h[0] + " " + h[1])}&body=${encodeURIComponent("この銘柄を毎日調べる銘柄に追加してください（そのまま「Create」を押すだけでOK）")}`;
-  openModal(`<h3>${esc(h[1])} <span class="muted">${h[0]}</span></h3>
-    <p>この銘柄は、まだ毎日の計算に入っていません（毎日計算しているのは大型〜中型の約500社と、追加した銘柄です）。</p>
-    <p><a href="${url}" target="_blank" rel="noopener"><button class="main" style="font-size:14px;padding:8px 14px">この銘柄を追加してもらう</button></a></p>
-    <div class="muted">GitHub の画面が開くので、緑の「Create」を押してください。2〜3分で計算され、ここで見られるようになります。以後は毎日自動で更新されます。<br>
-    パソコンの画面（画面を開く.bat）なら、どの銘柄もその場で調べられます。</div>`);
 }
 
 function scoreCard(title, sub, s, extra = "") {
@@ -570,7 +585,9 @@ function showStock(o) {
     <div class="legend"><span><i style="background:var(--accent)"></i>終値</span><span><i style="background:#f08c00"></i>25日平均</span><span><i style="background:#7048e8"></i>75日平均</span></div>`;
   h += `<h3>今の数字</h3><div class="facts">${o.facts.map(([k, v]) => `<div><span>${esc(k)}</span><span>${esc(v)}</span></div>`).join("")}</div>`;
   if (o.views) h += `<h3>4人の投資家の考え方で見ると</h3><div style="line-height:1.7;font-size:12.5px">${Object.entries(o.views).map(([k, v]) => `<b>${k}</b>：${esc(v)}`).join("<br>")}</div>`;
-  if (o.news && o.news.length) h += `<h3>この会社のニュース</h3><ul class="news">${o.news.map(n => `<li style="white-space:normal">${`<span class="dot ${n.tone > 0 ? "p" : n.tone <= -2 ? "mm" : n.tone < 0 ? "m" : ""}"></span>`}<a href="${esc(n.link)}" target="_blank" rel="noopener">${esc(n.title)}</a></li>`).join("")}</ul>`;
+  h += `<h3>この会社のニュース</h3>`;
+  if (o.news && o.news.length) h += `<ul class="news">${o.news.map(n => `<li style="white-space:normal">${`<span class="dot ${n.tone > 0 ? "p" : n.tone <= -2 ? "mm" : n.tone < 0 ? "m" : ""}"></span>`}<a href="${esc(n.link)}" target="_blank" rel="noopener">${esc(n.title)}</a></li>`).join("")}</ul>`;
+  h += `<div style="margin-top:6px"><a href="https://news.google.com/search?q=${encodeURIComponent(o.name + " 株")}&hl=ja&gl=JP&ceid=JP:ja" target="_blank" rel="noopener">最新のニュースを探す ›</a></div>`;
   h += `<div class="disc">点数は、公開されている数字から機械的に出した参考値です。株価が上がることを約束するものではありません。
     「来期の利益見込み」「目標株価」はアナリストの予想で、外れることもあります。${STATIC ? `計算した日時：${esc(o.updated)}（毎日の取引終了後に更新）` : ""}</div>`;
   openModal(h);
