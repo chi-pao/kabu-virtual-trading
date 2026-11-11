@@ -335,10 +335,11 @@ async function loadSummary() {
   const k = (l, v, cl = "") => `<div class="k"><span class="l">${l}</span><span class="v ${cl}">${v}</span></div>`;
   const D = S.day;
   document.getElementById("hdr").innerHTML = `<h1>仮想売買ボード <span class="badge ${S.market === "取引時間中" ? "on" : ""}">${S.market}</span></h1>` +
-    k("中期の売買：資産", yen(S.equity)) +
-    k("中期の損益", `${S.pnl >= 0 ? "+" : ""}${yen(S.pnl)} <small>${pct(S.pnl / S.capital)}</small>`, cls(S.pnl)) +
-    (D ? k(`デイトレの損益（${D.days}日）`, `${sgn(D.total)} <small>${pct(D.total / D.capital)}</small>`, cls(D.total)) +
-         k(`デイトレ ${D.last_date ? D.last_date.slice(5).replace("-", "/") : ""}`, sgn(D.last_pnl), cls(D.last_pnl)) : "") +
+    (D ? k("資産の合計（中期＋デイトレ）", yen(S.equity + D.capital + D.total)) +
+         k("損益の合計", `${sgn(S.pnl + D.total)} <small>${pct((S.pnl + D.total) / (S.capital + D.capital))}</small>`, cls(S.pnl + D.total)) : "") +
+    k("中期の売買", `${yen(S.equity)} <small class="${cls(S.pnl)}">${sgn(S.pnl)}</small>`) +
+    (D ? k("デイトレ", `${yen(D.capital + D.total)} <small class="${cls(D.total)}">${sgn(D.total)}</small>`) +
+         k(`デイトレ ${D.last_date ? D.last_date.slice(5).replace("-", "/") + "の損益" : ""}`, sgn(D.last_pnl), cls(D.last_pnl)) : "") +
     k("日経平均", `${num(ix.price)} <small class="${ud(ix.chg)}">${pct(ix.chg, 2)}</small>`) +
     `<span class="badge ${ix.regime ? "on" : "off"}">${ix.regime ? "地合い良好：買い可" : "地合い悪化：中期の新規買いお休み"}</span>` +
     k("世界情勢ニュース", S.macro_score == null ? "-" : (S.macro_score > 0 ? "+" : "") + S.macro_score, cls(S.macro_score)) +
