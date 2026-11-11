@@ -256,7 +256,7 @@ def api_summary():
     rk = ranking()
     scope = "監視中の47銘柄から"
     if rk:
-        scope = f"全上場銘柄のうち売買が活発な{rk['count']:,}社から（{rk['updated'][5:16]}の終値で採点）"
+        scope = f"全上場銘柄のうち売買が活発な{rk['count']:,}社から（{rk['updated'][5:10].replace('-', '/')}の終値で採点）"
 
         def fresh(lst, skip_held=False):
             out = []
