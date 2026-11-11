@@ -37,7 +37,8 @@ jobs:
           cache: pip
       - run: pip install -r requirements.txt
       - name: 日本語フォント（グラフ用）
-        run: sudo apt-get install -y -qq fonts-noto-cjk > /dev/null
+        continue-on-error: true    # 失敗してもグラフの文字が化けるだけなので、売買は続ける
+        run: sudo apt-get update -qq > /dev/null; sudo apt-get install -y -qq fonts-noto-cjk > /dev/null
 
       - name: 仮想売買・仮想デイトレ
         if: github.event.schedule == '30 7 * * 1-5' || github.event.schedule == '0 9,12 * * 1-5' || (github.event_name == 'workflow_dispatch' && github.event.inputs.task == 'trade')
