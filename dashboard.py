@@ -20,7 +20,7 @@ import pandas as pd
 import yfinance as yf
 
 sys.path.insert(0, str(Path(__file__).parent))
-from kabu import data, news
+from kabu import data, horizon, news
 from kabu.views import evaluate
 
 ROOT = Path(__file__).parent
@@ -231,6 +231,21 @@ def api_summary():
                               "地合いが良くなれば候補" if score >= 80 else "条件がそろうのを待つ"})
     picks.sort(key=lambda p: -p["score"])
     picks = picks[:5]
+
+    # 中期・長期のおすすめ度
+    mids, longs = [], []
+    for code, name in names.items():
+        d = ind.get(code)
+        if d is None or len(d) < 130:
+            continue
+        price, _ = now_price(code, ind, intra)
+        base = {"code": code, "name": name, "price": price, "held": code in eng["positions"]}
+        s1, r1 = horizon.mid_term(fund.get(code), d)
+        s2, r2 = horizon.long_term(fund.get(code), d, code)
+        mids.append({**base, "score": s1, "reasons": r1})
+        longs.append({**base, "score": s2, "reasons": r2})
+    mids.sort(key=lambda x: -x["score"])
+    longs.sort(key=lambda x: -x["score"])
     with _lock:
         _cache["pick_names"] = (time.time(), [p["name"] for p in picks[:3]])
 
@@ -247,7 +262,7 @@ def api_summary():
         "pnl": equity - c["capital"], "fees": eng.get("fees", 0),
         "index": {"price": ix_price, "chg": ix_price / ix_prev - 1, "sma75": float(sma75.iloc[-1]), "regime": regime},
         "macro_score": (st or {}).get("news", {}).get("macro_score"), "last_run": (st or {}).get("last_date"),
-        "positions": positions, "orders": orders, "watch": watch, "picks": picks, "trades": eng["trades"][-30:][::-1],
+        "positions": positions, "orders": orders, "watch": watch, "picks": picks, "mid": mids[:8], "long": longs[:8], "trades": eng["trades"][-30:][::-1],
         "equity_curve": eq, "bench": bench, "log": eng["log"][-20:][::-1],
         "rules": {"risk": c["risk_per_trade"], "target_r": c["target_r"], "max_pos": c["max_positions"]},
     }
