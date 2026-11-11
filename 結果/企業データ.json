@@ -9536,5 +9536,24 @@
   "numberOfAnalystOpinions": 7,
   "currentPrice": 3848.0,
   "_at": "2026-11-11T17:32:54.351007"
+ },
+ "3315": {
+  "shortName": "NIPPON COKE & ENGINEERING CO LT",
+  "trailingPE": null,
+  "forwardPE": null,
+  "priceToBook": 0.79167986,
+  "returnOnEquity": -0.19195999,
+  "earningsGrowth": -0.159,
+  "revenueGrowth": 0.097,
+  "dividendYield": 0.0,
+  "totalCash": 5171999744,
+  "totalDebt": 64420999168,
+  "marketCap": 27647162368,
+  "trailingEps": -25.16,
+  "forwardEps": null,
+  "targetMeanPrice": null,
+  "numberOfAnalystOpinions": null,
+  "currentPrice": 95.0,
+  "_at": "2026-11-11T21:43:14.189465"
  }
 }
