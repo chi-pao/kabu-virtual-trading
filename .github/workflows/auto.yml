@@ -1,0 +1,63 @@
+# パソコンの電源が切れていても、GitHub が決まった時間に仮想売買を動かす
+# 時刻は世界標準時（日本時間 −9時間）で書く
+name: 仮想売買の自動実行
+
+on:
+  schedule:
+    - cron: "*/30 0-6 * * 1-5"   # 平日 9:00〜15:30（日本時間）… 株価とニュースの更新
+    - cron: "30 7 * * 1-5"       # 平日 16:30 … 仮想売買・仮想デイトレを実行
+    - cron: "0 1 * * 6"          # 土曜 10:00 … 改善チェック
+    - cron: "0 */3 * * 0,6"      # 土日 3時間ごと … ニュースの更新
+  workflow_dispatch:              # 手動でも動かせる
+    inputs:
+      task:
+        description: "trade=売買も実行 / site=ページ更新だけ / improve=改善チェック"
+        default: "trade"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: auto-run
+  cancel-in-progress: false
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    env:
+      TZ: Asia/Tokyo
+      PYTHONIOENCODING: utf-8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -r requirements.txt
+      - name: 日本語フォント（グラフ用）
+        run: sudo apt-get install -y -qq fonts-noto-cjk > /dev/null
+
+      - name: 仮想売買・仮想デイトレ
+        if: github.event.schedule == '30 7 * * 1-5' || (github.event_name == 'workflow_dispatch' && github.event.inputs.task == 'trade')
+        run: |
+          python paper.py
+          python daytrade.py run
+
+      - name: 改善チェック
+        if: github.event.schedule == '0 1 * * 6' || (github.event_name == 'workflow_dispatch' && github.event.inputs.task == 'improve')
+        run: |
+          python improve.py
+          python backtest.py
+
+      - name: 公開ページを更新
+        run: python build_site.py
+
+      - name: 結果を保存
+        run: |
+          git config user.name "kabu-bot"
+          git config user.email "kabu-bot@users.noreply.github.com"
+          git add -A docs 仮想売買 デイトレ 結果
+          git diff --cached --quiet && exit 0
+          git commit -m "自動更新 $(date '+%Y-%m-%d %H:%M')"
+          for i in 1 2 3; do git pull --rebase -X ours && git push && break; sleep 5; done

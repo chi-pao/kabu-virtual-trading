@@ -1,0 +1,324 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>仮想売買ボード</title>
+<script src="https://unpkg.com/lightweight-charts@4.1.3/dist/lightweight-charts.standalone.production.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<style>
+:root{--bg:#f3f4f6;--card:#fff;--ink:#1d2129;--sub:#6b7280;--line:#e5e7eb;--up:#d1242f;--down:#1565c0;--good:#1a7f37;--bad:#c62828;--accent:#3b5bdb;--soft:#eef2ff}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#0f1115;--card:#171a21;--ink:#e6e8eb;--sub:#9aa3ad;--line:#2a2f3a;--up:#ff6b6b;--down:#5aa2ff;--good:#3fb950;--bad:#ff7b72;--accent:#7c9cff;--soft:#1e2433}}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--bg);color:var(--ink);font-family:"Yu Gothic UI","Meiryo",system-ui,sans-serif;font-size:13px}
+header{display:flex;align-items:center;gap:14px;padding:6px 12px;background:var(--card);border-bottom:1px solid var(--line);height:52px;overflow-x:auto;white-space:nowrap}
+h1{font-size:16px;margin:0}
+.k{display:flex;flex-direction:column;line-height:1.15}.k .l{font-size:11px;color:var(--sub)}.k .v{font-size:16px;font-weight:bold}
+.badge{padding:2px 8px;border-radius:99px;font-size:11px;background:var(--soft);color:var(--accent);font-weight:bold}
+.badge.on{background:#e6f4ea;color:var(--good)}.badge.off{background:#fdecea;color:var(--bad)}
+.muted{color:var(--sub);font-size:11px}
+.ticker{overflow:hidden;white-space:nowrap;background:var(--card);border-bottom:1px solid var(--line);height:28px;line-height:28px}
+.ticker .run{display:inline-block;padding-left:100%;animation:run 160s linear infinite}
+.ticker:hover .run{animation-play-state:paused}
+@keyframes run{to{transform:translateX(-100%)}}
+.ticker a{color:var(--ink);text-decoration:none;margin-right:40px}
+.dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:5px;background:var(--sub)}
+.dot.p{background:var(--good)}.dot.m{background:var(--bad)}.dot.mm{background:var(--bad);box-shadow:0 0 0 3px rgba(198,40,40,.25)}
+.up{color:var(--up)}.down{color:var(--down)}.pos{color:var(--good)}.neg{color:var(--bad)}
+/* スクロールしなくても見える部分 */
+.top{display:grid;grid-template-columns:minmax(0,1fr) minmax(300px,0.8fr) minmax(280px,0.7fr);gap:10px;padding:10px 12px;height:calc(100vh - 80px);min-height:520px}
+@media(max-width:1200px){.top{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}.top>.newsbox{grid-column:1/-1;height:300px}}
+@media(max-width:800px){.top{grid-template-columns:1fr;height:auto}.chartcard{height:60vh}}
+.card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:10px 12px;min-height:0}
+.chartcard{display:flex;flex-direction:column}
+.toolbar{display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-bottom:6px}
+.toolbar h2{font-size:15px;margin:0 8px 0 0}
+button{font:inherit;font-size:12px;border:1px solid var(--line);background:var(--card);color:var(--ink);border-radius:6px;padding:3px 9px;cursor:pointer}
+button.sel{background:var(--accent);color:#fff;border-color:var(--accent)}
+#chart{flex:1;min-height:0;position:relative}
+.legend{font-size:11px;color:var(--sub);display:flex;gap:12px;flex-wrap:wrap;margin-top:4px}
+.legend i{display:inline-block;width:14px;height:2px;vertical-align:middle;margin-right:4px}
+.views{font-size:11.5px;color:var(--sub);margin-top:4px;line-height:1.5;max-height:56px;overflow:auto}
+.side{display:grid;grid-template-rows:minmax(0,auto) minmax(0,1fr);gap:8px;min-height:0}
+.side .card,.top>.newsbox{overflow:hidden;display:flex;flex-direction:column}
+.picks{overflow:auto;flex:1}
+.pk{border:1px solid var(--line);border-radius:8px;padding:6px 8px;margin-bottom:5px;cursor:pointer}
+.pk:hover,.pk.sel{border-color:var(--accent)}
+.score{display:inline-block;min-width:34px;text-align:center;font-weight:bold;color:#fff;border-radius:6px;padding:1px 4px;margin-right:6px}
+.sbar{height:4px;background:var(--line);border-radius:2px;margin:4px 0}.sbar i{display:block;height:4px;border-radius:2px;background:var(--accent)}
+.chk{font-size:11px;color:var(--sub);display:none;margin-top:3px;line-height:1.5}.pk.sel .chk,.pk:first-child .chk{display:block}
+.side h2,.below h2{font-size:14px;margin:0 0 6px;display:flex;gap:6px;align-items:baseline}
+.hold{max-height:34vh;overflow:auto}
+.pc{border:1px solid var(--line);border-radius:8px;padding:7px 9px;margin-bottom:6px;cursor:pointer}
+.pc:hover,.pc.sel{border-color:var(--accent)}
+.row{display:flex;justify-content:space-between;gap:6px}
+.bar{position:relative;height:6px;border-radius:3px;background:linear-gradient(90deg,#f6c4c8,#e5e7eb 45%,#bfe3c8);margin:12px 2px 14px}
+.bar .m{position:absolute;top:-4px;width:2px;height:14px;background:var(--sub)}
+.bar .now{width:4px;background:var(--ink);border-radius:2px}
+.bar .lab{position:absolute;top:9px;font-size:10px;color:var(--sub);transform:translateX(-50%);white-space:nowrap}
+.newsbox{display:flex;flex-direction:column}
+.news{overflow:auto;flex:1;margin:0;padding:0}
+.news li{list-style:none;padding:3px 0;border-bottom:1px solid var(--line);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:12px}
+.news .t{color:var(--sub);font-size:11px;margin-right:6px;font-variant-numeric:tabular-nums}
+.news a{color:var(--ink);text-decoration:none}.news a:hover{text-decoration:underline}
+.empty{color:var(--sub);padding:6px 0}
+/* 下の段（スクロールして見る） */
+.below{display:grid;gap:10px;padding:0 12px 16px;grid-template-columns:minmax(0,1fr) minmax(0,1fr)}
+@media(max-width:1000px){.below{grid-template-columns:1fr}}
+.full{grid-column:1/-1}
+table{width:100%;border-collapse:collapse}th,td{padding:5px 6px;border-bottom:1px solid var(--line);text-align:right;white-space:nowrap}
+th{font-size:11px;color:var(--sub);font-weight:normal}td:first-child,th:first-child{text-align:left}
+tr.click{cursor:pointer}tr.click:hover{background:var(--soft)}
+.tbl{overflow-x:auto}
+.tag{font-size:11px;padding:1px 6px;border-radius:4px;background:var(--soft)}
+pre{white-space:pre-wrap;font-size:12px;color:var(--sub);margin:0;max-height:240px;overflow:auto}
+</style>
+</head>
+<body>
+<header id="hdr"><h1>仮想売買ボード</h1><span class="muted">読み込み中…</span></header>
+<div class="ticker"><div class="run" id="ticker">ニュースを読み込み中…</div></div>
+
+<div class="top">
+  <section class="card chartcard">
+    <div class="toolbar">
+      <h2 id="ctitle">日経平均</h2>
+      <span id="picks"></span>
+      <span style="margin-left:auto"></span>
+      <button id="m-d" class="sel" onclick="setMode('d')">日足</button>
+      <button id="m-i" onclick="setMode('i')">今日の5分足</button>
+    </div>
+    <div id="chart"></div>
+    <div class="legend">
+      <span><i style="background:#f08c00"></i>25日平均</span><span><i style="background:#7048e8"></i>75日平均</span>
+      <span><i style="background:var(--sub)"></i>買値</span><span><i style="background:var(--bad)"></i>損切り</span>
+      <span><i style="background:var(--good)"></i>利確</span><span><i style="background:var(--accent)"></i>買う目安</span>
+      <span>ローソク足：<b class="up">赤＝上がった日</b>／<b class="down">青＝下がった日</b>　株価は約20分遅れ</span>
+    </div>
+    <div class="views" id="cviews"></div>
+  </section>
+
+  <div class="side">
+    <section class="card">
+      <h2>持っている株 <span class="muted">クリックでチャート</span></h2>
+      <div class="hold" id="pos"></div>
+      <div id="orders"></div>
+    </section>
+    <section class="card">
+      <h2>今いちばん良いと思う銘柄 <span class="muted">このツールの売買ルールで100点満点採点</span></h2>
+      <div class="picks" id="picksbox"></div>
+    </section>
+  </div>
+
+  <section class="card newsbox">
+    <h2>ニュース速報 <span class="muted">10分ごと・緑=良い／赤=悪い</span></h2>
+    <ul class="news" id="news"></ul>
+  </section>
+</div>
+
+<div class="below">
+  <section class="card full">
+    <h2>買い候補・ウォッチリスト <span class="muted">「買う目安」を終値で超えて条件がそろうと、翌朝に買い注文（行をクリックでチャート）</span></h2>
+    <div class="tbl"><table id="watch"></table></div>
+  </section>
+  <section class="card">
+    <h2>資産の動き <span class="muted">緑＝この作戦／灰＝日経平均を持っていた場合</span></h2>
+    <div style="height:220px;position:relative"><canvas id="eq"></canvas></div>
+  </section>
+  <section class="card">
+    <h2>最近の動き（自動売買の記録）</h2>
+    <pre id="log"></pre>
+  </section>
+  <section class="card full" id="links" style="display:none">
+    <h2>くわしい成績・レポート</h2>
+    <div style="display:flex;gap:10px;flex-wrap:wrap">
+      <a href="reports/swing.html">数日〜数週間持つ仮想売買の成績</a>
+      <a href="reports/daytrade.html">仮想デイトレの成績</a>
+      <a href="reports/improve.html">改善レポート（毎週土曜）</a>
+      <a href="reports/backtest.html">過去5年の検証</a>
+    </div>
+  </section>
+  <section class="card full">
+    <h2>売買の記録</h2>
+    <div class="tbl"><table id="trades"></table></div>
+  </section>
+</div>
+
+<script>
+const yen = v => v == null ? "-" : Math.round(v).toLocaleString("ja-JP") + "円";
+const num = v => v == null ? "-" : Number(v).toLocaleString("ja-JP", {maximumFractionDigits: 0});
+const pct = (v, d = 1) => v == null ? "-" : (v >= 0 ? "+" : "") + (v * 100).toFixed(d) + "%";
+const cls = v => v > 0 ? "pos" : v < 0 ? "neg" : "";
+const ud = v => v > 0 ? "up" : v < 0 ? "down" : "";
+const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+let S = null, current = "N225", mode = "d", C = null, lines = [], eqChart = null;
+const STATIC = true;  // ネット公開版では true（あらかじめ作ったデータファイルを読む）
+const api = p => !STATIC ? fetch(p) : fetch(
+  p === "/api/summary" ? "data/summary.json" : p === "/api/news" ? "data/news.json" : "data/chart_" + p.split("code=")[1] + ".json",
+  {cache: "no-store"});
+
+/* ---------- ローソク足チャート ---------- */
+function initChart() {
+  const el = document.getElementById("chart");
+  const chart = LightweightCharts.createChart(el, {
+    autoSize: true,
+    layout: {background: {color: css("--card")}, textColor: css("--sub"), fontFamily: "Yu Gothic UI, Meiryo, sans-serif"},
+    grid: {vertLines: {color: css("--line")}, horzLines: {color: css("--line")}},
+    rightPriceScale: {borderColor: css("--line")},
+    timeScale: {borderColor: css("--line"), timeVisible: true, secondsVisible: false},
+    crosshair: {mode: 0},
+    localization: {locale: "ja-JP"},
+  });
+  const candle = chart.addCandlestickSeries({upColor: css("--up"), downColor: css("--down"), borderVisible: false,
+    wickUpColor: css("--up"), wickDownColor: css("--down")});
+  candle.priceScale().applyOptions({scaleMargins: {top: 0.05, bottom: 0.22}});
+  const vol = chart.addHistogramSeries({priceFormat: {type: "volume"}, priceScaleId: "", color: "rgba(120,120,140,.35)"});
+  vol.priceScale().applyOptions({scaleMargins: {top: 0.82, bottom: 0}});
+  const s25 = chart.addLineSeries({color: "#f08c00", lineWidth: 1.5, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false});
+  const s75 = chart.addLineSeries({color: "#7048e8", lineWidth: 1.5, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false});
+  C = {chart, candle, vol, s25, s75};
+}
+
+function setMode(m) {
+  mode = m;
+  document.getElementById("m-d").classList.toggle("sel", m === "d");
+  document.getElementById("m-i").classList.toggle("sel", m === "i");
+  loadChart(current, true);
+}
+
+async function loadChart(code, reset = true) {
+  const changed = code !== current; current = code;
+  const r = await api("/api/chart?code=" + code); if (!r.ok) return;
+  const c = await r.json();
+  const keep = !reset && !changed ? C.chart.timeScale().getVisibleLogicalRange() : null;
+  const rows = mode === "d" ? c.candles : c.intraday;
+  C.candle.setData(rows.map(x => ({time: x.time, open: x.open, high: x.high, low: x.low, close: x.close})));
+  C.vol.setData(rows.map(x => ({time: x.time, value: x.vol, color: x.close >= x.open ? "rgba(209,36,47,.30)" : "rgba(21,101,192,.30)"})));
+  C.s25.setData(mode === "d" ? c.sma25 : []);
+  C.s75.setData(mode === "d" ? c.sma75 : []);
+  lines.forEach(l => C.candle.removePriceLine(l)); lines = [];
+  const L = (price, color, title) => price && lines.push(C.candle.createPriceLine({price, color, lineWidth: 1, lineStyle: 2, axisLabelVisible: true, title}));
+  const w = (S?.watch || []).find(x => x.code === code);
+  if (c.position) {
+    L(c.position.entry, css("--sub"), "買値");
+    L(c.position.stop, css("--bad"), "損切り");
+    if (!c.position.partial) L(c.position.target, css("--good"), "利確");
+  } else if (w && w.trigger) {
+    L(w.trigger, css("--accent"), "買う目安");
+  }
+  if (keep) C.chart.timeScale().setVisibleLogicalRange(keep);
+  else if (mode === "d") C.chart.timeScale().setVisibleLogicalRange({from: rows.length - 120, to: rows.length + 3});
+  else C.chart.timeScale().fitContent();
+  const last = rows[rows.length - 1];
+  document.getElementById("ctitle").innerHTML = `${esc(c.name)}${code === "N225" ? "" : ` <span class="muted">${code}</span>`}` +
+    (last ? ` <span style="font-size:13px">${num(last.close)}${w ? ` <span class="${ud(w.chg)}">${pct(w.chg, 2)}</span>` : ""}</span>` : "") +
+    (w ? ` <span class="tag">${w.trend}</span>` : "");
+  document.getElementById("cviews").innerHTML = w ? Object.entries(w.views).map(([k, v]) => `<b>${k}</b>：${esc(v)}`).join("　") : "";
+  drawPicks();
+  document.querySelectorAll(".pc,.pk").forEach(e => e.classList.toggle("sel", e.dataset.code === code));
+}
+
+function drawPicks() {
+  const items = [["N225", "日経平均"], ...(S?.positions || []).map(p => [p.code, p.name])];
+  if (!items.some(i => i[0] === current)) {
+    const w = (S?.watch || []).find(x => x.code === current); if (w) items.push([w.code, w.name]);
+  }
+  document.getElementById("picks").innerHTML = items.map(([c, n]) =>
+    `<button class="${c === current ? "sel" : ""}" onclick="loadChart('${c}')">${esc(n)}</button>`).join(" ");
+}
+
+/* ---------- 数字・持ち株・注文 ---------- */
+async function loadSummary() {
+  const r = await api("/api/summary"); if (!r.ok) return;
+  S = await r.json();
+  const ix = S.index;
+  const k = (l, v, cl = "") => `<div class="k"><span class="l">${l}</span><span class="v ${cl}">${v}</span></div>`;
+  document.getElementById("hdr").innerHTML = `<h1>仮想売買ボード</h1>
+    <span class="badge ${S.market === "取引時間中" ? "on" : ""}">${S.market}</span>` +
+    k("資産の合計", yen(S.equity)) +
+    k("損益（手数料込み）", `${S.pnl >= 0 ? "+" : ""}${yen(S.pnl)} <small>${pct(S.pnl / S.capital)}</small>`, cls(S.pnl)) +
+    k("現金", yen(S.cash)) +
+    k("日経平均", `${num(ix.price)} <small class="${ud(ix.chg)}">${pct(ix.chg, 2)}</small>`) +
+    `<span class="badge ${ix.regime ? "on" : "off"}">${ix.regime ? "地合い良好：買い可" : "地合い悪化：新規の買いお休み"}</span>` +
+    k("世界情勢ニュース", S.macro_score == null ? "-" : (S.macro_score > 0 ? "+" : "") + S.macro_score, cls(S.macro_score)) +
+    `<span class="muted" style="margin-left:auto">最終更新 ${S.updated.slice(11, 16)}（1分ごと）<br>本物のお金は使っていません</span>`;
+
+  document.getElementById("pos").innerHTML = S.positions.length ? S.positions.map(p => {
+    const lo = Math.min(p.stop, p.price) * 0.995, hi = Math.max(p.target || p.price * 1.05, p.price) * 1.005;
+    const at = v => Math.max(0, Math.min(100, (v - lo) / (hi - lo) * 100));
+    return `<div class="pc" data-code="${p.code}" onclick="loadChart('${p.code}')">
+      <div class="row"><b>${esc(p.name)}</b><b class="${cls(p.pnl)}">${p.pnl >= 0 ? "+" : ""}${yen(p.pnl)}（${pct(p.pnl_pct)}）</b></div>
+      <div class="row muted"><span>${p.entry_date} に ${num(p.entry)}円で ${p.shares}株</span><span>今 ${num(p.price)}円（${p.at}）</span></div>
+      <div class="bar">
+        <div class="m" style="left:${at(p.stop)}%;background:var(--bad)"></div><div class="lab" style="left:${at(p.stop)}%">損切 ${num(p.stop)}</div>
+        <div class="m" style="left:${at(p.entry)}%"></div>
+        ${p.target ? `<div class="m" style="left:${at(p.target)}%;background:var(--good)"></div><div class="lab" style="left:${at(p.target)}%">利確 ${num(p.target)}</div>` : ""}
+        <div class="m now" style="left:${at(p.price)}%"></div>
+      </div>
+      <div class="muted">${p.target ? `${num(p.target)}円で半分売る／${num(p.stop)}円割れで全部売る` : esc(p.trail_note)}</div>
+    </div>`;
+  }).join("") : `<div class="empty">今は株を持っていません。${S.index.regime ? "買う条件がそろうのを待っています。" : "日経平均が下向きなので、新しく買うのはお休み中です。"}</div>`;
+
+  document.getElementById("orders").innerHTML = S.orders.length ? `<div class="muted" style="margin-top:4px"><b>次の営業日の注文予定</b></div>` +
+    S.orders.map(o => `<div class="pc" onclick="loadChart('${o.code}')"><div class="row"><b class="${o.side === "buy" ? "pos" : "neg"}">${o.side === "buy" ? "買い" : "売り"}</b>
+      <b>${esc(o.name)} ${o.shares}株</b><span>${o.side === "buy" ? num(o.ref) + "円前後" : "寄り付き"}</span></div>
+      ${o.side === "buy" ? `<div class="muted">損切り予定 ${num(o.stop)}円・利確予定 ${num(o.target)}円・${num(o.max_price)}円より高く始まったら見送り</div>` : ""}
+      <div class="muted">${esc(o.reason)}</div></div>`).join("")
+    : `<div class="muted" style="margin-top:4px">次の注文予定：なし（前回の自動売買：${S.last_run || "まだ"}）</div>`;
+
+  const col = s => s >= 80 ? "var(--good)" : s >= 60 ? "#b26a00" : "var(--sub)";
+  document.getElementById("picksbox").innerHTML = S.picks.length ? S.picks.map(p => `
+    <div class="pk ${p.code === current ? "sel" : ""}" data-code="${p.code}" onclick="loadChart('${p.code}')">
+      <div class="row"><span><span class="score" style="background:${col(p.score)}">${p.score}</span><b>${esc(p.name)}</b> <span class="muted">${p.code}</span></span>
+        <span>${num(p.price)} <small class="${ud(p.chg)}">${pct(p.chg, 1)}</small></span></div>
+      <div class="sbar"><i style="width:${p.score}%;background:${col(p.score)}"></i></div>
+      <div class="row muted"><span>${esc(p.next)}</span><span>目安 ${num(p.trigger)}・損切 ${num(p.plan_stop)}・利確 ${num(p.plan_target)}</span></div>
+      <div class="chk">${p.checks.map(c => `${c.ok ? '<b class="pos">✓</b>' : '<b class="neg">✕</b>'} ${esc(c.label)}：${esc(c.note)}`).join("<br>")}</div>
+    </div>`).join("") : '<div class="empty">候補を計算中…</div>';
+
+  document.getElementById("watch").innerHTML = "<tr><th>銘柄</th><th>今の値段</th><th>前日比</th><th>流れ</th><th>会社選び</th><th>買う目安</th><th>あと</th><th>損切り予定</th><th>利確予定</th><th>買う量</th><th>PER</th><th>ROE</th></tr>" +
+    S.watch.map(w => `<tr class="click" onclick="loadChart('${w.code}');scrollTo({top:0,behavior:'smooth'})" title="${esc(Object.entries(w.views).map(([k, v]) => k + "：" + v).join("\n"))}">
+      <td>${w.held ? "★" : ""}${esc(w.name)} <span class="muted">${w.code}</span></td><td>${num(w.price)}</td><td class="${ud(w.chg)}">${pct(w.chg, 2)}</td>
+      <td><span class="tag">${w.trend}</span></td><td>${w.fund_ok ? '<b class="pos">○</b>' : `<span class="muted" title="${esc(w.fund_note)}">✕</span>`}</td>
+      <td>${num(w.trigger)}</td><td>${w.to_trigger == null ? "-" : w.to_trigger <= 0 ? '<b class="pos">到達</b>' : pct(w.to_trigger)}</td>
+      <td>${num(w.plan_stop)}</td><td>${num(w.plan_target)}</td><td>${w.size >= 1 ? "通常" : "半分"}</td>
+      <td>${w.per ? w.per.toFixed(1) : "-"}</td><td>${w.roe != null ? (w.roe * 100).toFixed(0) + "%" : "-"}</td></tr>`).join("");
+
+  document.getElementById("trades").innerHTML = S.trades.length ? "<tr><th>銘柄</th><th>買った日</th><th>売った日</th><th>株数</th><th>買値</th><th>売値</th><th>損益</th><th>理由</th></tr>" +
+    S.trades.map(t => `<tr><td>${esc(t.name)}</td><td>${t.entry_date}</td><td>${t.exit_date}</td><td>${t.shares}</td><td>${num(t.entry)}</td><td>${num(t.exit)}</td>
+      <td class="${cls(t.pnl)}">${t.pnl >= 0 ? "+" : ""}${num(t.pnl)}</td><td style="text-align:left">${esc(t.reason)}</td></tr>`).join("")
+    : '<tr><td class="empty">まだ売買の記録はありません</td></tr>';
+  document.getElementById("log").textContent = S.log.join("\n") || "まだ記録がありません";
+
+  const ec = S.equity_curve;
+  if (eqChart) eqChart.destroy();
+  eqChart = new Chart(document.getElementById("eq"), {type: "line", data: {labels: ec.map(x => x[0]), datasets: [
+    {data: ec.map(x => x[1]), borderColor: css("--good"), pointRadius: ec.length < 3 ? 3 : 0, tension: .2},
+    {data: S.bench.map(x => x[1]), borderColor: "#999", borderDash: [4, 3], pointRadius: 0}]},
+    options: {responsive: true, maintainAspectRatio: false, animation: false, plugins: {legend: {display: false}},
+      scales: {y: {ticks: {callback: v => (v / 10000).toFixed(0) + "万"}}}}});
+  drawPicks();
+}
+
+/* ---------- ニュース ---------- */
+async function loadNews() {
+  const r = await api("/api/news"); if (!r.ok) return;
+  const items = await r.json();
+  const dot = t => `<span class="dot ${t > 0 ? "p" : t <= -2 ? "mm" : t < 0 ? "m" : ""}"></span>`;
+  const time = s => s ? new Date(s).toLocaleString("ja-JP", {month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit"}) : "";
+  document.getElementById("ticker").innerHTML = items.slice(0, 25).map(n =>
+    `<a href="${esc(n.link)}" target="_blank" rel="noopener">${dot(n.tone)}${n.held ? "【保有株】" : ""}${esc(n.title)}</a>`).join("") || "ニュースを取得できませんでした";
+  const hm = s => s ? new Date(s).toLocaleTimeString("ja-JP", {hour: "2-digit", minute: "2-digit"}) : "";
+  document.getElementById("news").innerHTML = items.map(n =>
+    `<li title="${esc(n.title)}（${esc(n.source)} ${time(n.time)}）"><span class="t">${hm(n.time)}</span>${dot(n.tone)}<a href="${esc(n.link)}" target="_blank" rel="noopener">${n.held ? "<b>【保有】</b>" : n.pick ? "<b>【候補】</b>" : ""}${esc(n.title)}</a></li>`).join("");
+}
+
+initChart();
+if (STATIC) document.getElementById("links").style.display = "";
+loadSummary().then(() => loadChart("N225"));
+loadNews();
+setInterval(() => loadSummary().then(() => loadChart(current, false)), STATIC ? 300000 : 60000);
+setInterval(loadNews, STATIC ? 300000 : 600000);
+</script>
+</body>
+</html>

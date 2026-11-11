@@ -1,0 +1,36 @@
+{
+ "cfg": {
+  "capital": 3000000,
+  "strategy": "orb",
+  "allow_short": false,
+  "use_index": true,
+  "or_end": "10:00",
+  "last_entry": "14:00",
+  "flat_at": "15:15",
+  "risk_per_trade": 0.005,
+  "max_position_pct": 0.3,
+  "max_positions": 3,
+  "daily_loss_limit": 0.015,
+  "target_r": 2.0,
+  "breakeven_r": 1.0,
+  "stop_or_mult": 0.5,
+  "min_stop_pct": 0.003,
+  "min_range": 0.004,
+  "max_range": 0.03,
+  "max_gap": 0.03,
+  "vol_mult": 1.5,
+  "slippage": 0.0005,
+  "fee_rate": 0.0,
+  "min_reward_cost": 4,
+  "start": "2026-11-11"
+ },
+ "engine": {
+  "cash": 3000000.0,
+  "trades": [],
+  "days": [],
+  "log": [],
+  "fees": 0.0
+ },
+ "start": "2026-11-11",
+ "last": null
+}
