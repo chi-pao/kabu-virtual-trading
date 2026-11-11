@@ -9555,5 +9555,24 @@
   "numberOfAnalystOpinions": null,
   "currentPrice": 95.0,
   "_at": "2026-11-11T21:43:14.189465"
+ },
+ "5255": {
+  "shortName": "MONSTARLAB INC",
+  "trailingPE": null,
+  "forwardPE": null,
+  "priceToBook": 6.0736675,
+  "returnOnEquity": -0.055430003,
+  "earningsGrowth": null,
+  "revenueGrowth": 0.041,
+  "dividendYield": 0.0,
+  "totalCash": 3673999872,
+  "totalDebt": 5848999936,
+  "marketCap": 4008760320,
+  "trailingEps": -2.49,
+  "forwardEps": null,
+  "targetMeanPrice": null,
+  "numberOfAnalystOpinions": null,
+  "currentPrice": 62.0,
+  "_at": "2026-11-11T22:16:12.191418"
  }
 }
