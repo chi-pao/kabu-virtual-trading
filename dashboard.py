@@ -285,6 +285,19 @@ def api_summary():
                "last_date": last["date"] if last else None, "last_pnl": last["pnl"] if last else 0,
                "trades": de["trades"][-30:][::-1]}
 
+    # 決算作戦（別の財布で100万円）
+    ep = ROOT / "決算作戦" / "state.json"
+    est = json.loads(ep.read_text(encoding="utf-8")) if ep.exists() else None
+    earn = None
+    if est:
+        cap = est["cfg"]["capital"]
+        ev = est["equity"][-1][1] if est["equity"] else est["cash"]
+        earn = {"capital": cap, "equity": ev, "total": ev - cap, "last_day": est["last_day"],
+                "positions": [{"code": c, **{k: p[k] for k in ("name", "shares", "buy", "entry_date", "days", "hold", "kind", "why", "last")},
+                               "pnl": (p["last"] - p["buy"]) * p["shares"]} for c, p in est["positions"].items()],
+                "pending": sorted(est["pending"], key=lambda p: -p["val"])[:12],
+                "trades": est["trades"][-30:][::-1], "log": est["log"][-15:][::-1]}
+
     equity = eng["cash"] + mv
     ixs = ix["Close"]
     eq = eng["equity"]
@@ -299,7 +312,7 @@ def api_summary():
         "index": {"price": ix_price, "chg": ix_price / ix_prev - 1, "sma75": float(sma75.iloc[-1]), "regime": regime},
         "macro_score": (st or {}).get("news", {}).get("macro_score"), "last_run": (st or {}).get("last_date"),
         "positions": positions, "orders": orders, "watch": watch, "picks": picks, "mid": mids[:8], "long": longs[:8], "trades": eng["trades"][-30:][::-1],
-        "equity_curve": eq, "bench": bench, "day": day, "pick_scope": scope, "log": eng["log"][-20:][::-1],
+        "equity_curve": eq, "bench": bench, "day": day, "earn": earn, "pick_scope": scope, "log": eng["log"][-20:][::-1],
         "rules": {"risk": c["risk_per_trade"], "target_r": c["target_r"], "max_pos": c["max_positions"]},
     }
 

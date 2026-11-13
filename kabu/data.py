@@ -52,6 +52,13 @@ def add_indicators(d, breakout_days=20):
     sig = macd.ewm(span=9, adjust=False).mean()
     d["macd_gc"] = (macd > sig) & (macd.shift(1) <= sig.shift(1))  # MACDのゴールデンクロス
     d["rsi_min3"] = d["rsi"].rolling(3).min()                       # 直近3日のRSIの最低
+    # 押し目買い用：短い期間の売られすぎ（RSI2）、5日・200日の平均、その時点の売買代金
+    up2 = delta.clip(lower=0).ewm(alpha=1 / 2, adjust=False).mean()
+    dn2 = (-delta.clip(upper=0)).ewm(alpha=1 / 2, adjust=False).mean()
+    d["rsi2"] = 100 - 100 / (1 + up2 / dn2.replace(0, np.nan))
+    d["sma5"] = c.rolling(5).mean()
+    d["sma200"] = c.rolling(200).mean()
+    d["turn20"] = (c * d["Volume"]).rolling(20).mean()
     return d
 
 

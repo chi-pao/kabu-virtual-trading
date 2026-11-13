@@ -24,7 +24,8 @@ def stats(state, cfg, index_close=None):
     by_year = defaultdict(float)
     for t in trades:
         by_year[t["exit_date"][:4]] += t["pnl"]
-    tax = sum(max(v, 0) for v in by_year.values()) * cfg["tax_rate"]
+    # NISAは利益に税金がかからない（そのかわり損は他と相殺できない）
+    tax = 0 if cfg.get("account") == "nisa" else sum(max(v, 0) for v in by_year.values()) * cfg["tax_rate"]
     s = {
         "開始資金": start,
         "現在の資産": float(eq.iloc[-1]),

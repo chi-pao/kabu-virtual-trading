@@ -221,7 +221,11 @@ a{color:var(--accent)}
     </div>
   </section>
   <section class="card full">
-    <h2>売買の記録（デイトレ） <span class="muted">その日のうちに必ず売る・中期とは別の300万円</span></h2>
+    <h2>決算作戦 <span class="muted">良い決算・予想の引き上げの翌朝に買い、5日または20日で売る・別の100万円</span></h2>
+    <div id="earn"></div>
+  </section>
+  <section class="card full">
+    <h2>売買の記録（デイトレ） <span class="muted">その日のうちに必ず売る・中期とは別の100万円</span></h2>
     <div class="tbl"><table id="dtrades"></table></div>
   </section>
   <section class="card full">
@@ -333,10 +337,12 @@ async function loadSummary() {
   S = await r.json();
   const ix = S.index;
   const k = (l, v, cl = "") => `<div class="k"><span class="l">${l}</span><span class="v ${cl}">${v}</span></div>`;
-  const D = S.day;
+  const D = S.day, E = S.earn;
+  const capAll = S.capital + (D ? D.capital : 0) + (E ? E.capital : 0), pnlAll = S.pnl + (D ? D.total : 0) + (E ? E.total : 0);
   document.getElementById("hdr").innerHTML = `<h1>仮想売買ボード <span class="badge ${S.market === "取引時間中" ? "on" : ""}">${S.market}</span></h1>` +
-    (D ? k("資産の合計（中期＋デイトレ）", yen(S.equity + D.capital + D.total)) +
-         k("損益の合計", `${sgn(S.pnl + D.total)} <small>${pct((S.pnl + D.total) / (S.capital + D.capital))}</small>`, cls(S.pnl + D.total)) : "") +
+    k(`資産の合計（${["中期", D ? "デイトレ" : "", E ? "決算" : ""].filter(Boolean).join("＋")}）`, yen(capAll + pnlAll)) +
+    k("損益の合計", `${sgn(pnlAll)} <small>${pct(pnlAll / capAll)}</small>`, cls(pnlAll)) +
+    (E ? k("決算作戦", `${yen(E.equity)} <small class="${cls(E.total)}">${sgn(E.total)}</small>`) : "") +
     k("中期の売買", `${yen(S.equity)} <small class="${cls(S.pnl)}">${sgn(S.pnl)}</small>`) +
     (D ? k("デイトレ", `${yen(D.capital + D.total)} <small class="${cls(D.total)}">${sgn(D.total)}</small>`) +
          k(`デイトレ ${D.last_date ? D.last_date.slice(5).replace("-", "/") + "の損益" : ""}`, sgn(D.last_pnl), cls(D.last_pnl)) : "") +
@@ -386,6 +392,16 @@ async function loadSummary() {
     D.trades.map(t => `<tr><td>${esc(t.name)}</td><td>${t.date.slice(5).replace("-", "/")}</td><td>${t.in_time}→${t.out_time}</td><td>${t.shares}</td><td>${num(t.entry)}</td><td>${num(t.exit)}</td>
       <td class="${cls(t.pnl)}">${t.pnl >= 0 ? "+" : ""}${num(t.pnl)}</td><td style="text-align:left">${esc(t.reason)}</td></tr>`).join("")
     : '<tr><td class="empty">まだデイトレの記録はありません</td></tr>';
+  document.getElementById("earn").innerHTML = !E ? '<div class="empty">まだ始まっていません</div>' :
+    `<div class="muted">資産 <b>${yen(E.equity)}</b>（<span class="${cls(E.total)}">${sgn(E.total)}</span>）・最終処理 ${E.last_day || "-"}</div>` +
+    (E.positions.length ? E.positions.map(p => `<div class="pc" onclick="showChart('${p.code}')"><div class="row"><b>${esc(p.name)}</b><b class="${cls(p.pnl)}">${sgn(p.pnl)}</b></div>
+      <div class="row muted"><span>${p.entry_date} に ${num(p.buy)}円で ${p.shares}株</span><span>${p.days}/${p.hold}日目</span></div>
+      <div class="muted">${esc(p.kind)}：${esc(p.why)}</div></div>`).join("") : '<div class="muted" style="margin-top:4px">今は持っていません</div>') +
+    (E.pending.length ? `<div class="muted" style="margin-top:8px"><b>次の朝の候補</b>（前日より高く始まったら、強い順に4社まで買う）</div>` +
+      E.pending.map(p => `<div class="muted">・${esc(p.name)}（${p.code}）${esc(p.why)}</div>`).join("") : "") +
+    `<div class="tbl" style="margin-top:8px"><table>${E.trades.length ? "<tr><th>銘柄</th><th>買った日</th><th>売った日</th><th>株数</th><th>買値</th><th>売値</th><th>損益</th><th>合図</th></tr>" +
+      E.trades.map(t => `<tr><td>${esc(t.name)}</td><td>${t.entry_date}</td><td>${t.exit_date}</td><td>${t.shares}</td><td>${num(t.entry)}</td><td>${num(t.exit)}</td>
+      <td class="${cls(t.pnl)}">${sgn(t.pnl)}</td><td style="text-align:left">${esc(t.why)}</td></tr>`).join("") : '<tr><td class="empty">まだ売買の記録はありません</td></tr>'}</table></div>`;
   document.getElementById("log").textContent = S.log.join("\n") || "まだ記録がありません";
 
   const ec = S.equity_curve;

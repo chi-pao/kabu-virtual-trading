@@ -8,6 +8,8 @@
 """
 import math
 
+import pandas as pd
+
 from .views import evaluate
 
 
@@ -32,6 +34,20 @@ class Engine:
                 return
             fee = self._fee(px * shares)
             cost = px * shares + fee
+        if self.cfg.get("account") == "nisa":
+            # NISA（成長投資枠）は1年に買える合計が決まっている。売っても枠が戻るのは翌年
+            lot = self.cfg.get("lot", 100)
+            used = self.s.setdefault("nisa_used", {})
+            left = self.cfg.get("nisa_annual", 2400000) - used.get(date[:4], 0)
+            if px * shares > left:
+                shares = int(left / px // lot * lot)
+                if shares < lot:
+                    self._log(date, f"見送り {name}({code}): 今年のNISA枠の残り（{left:,.0f}円）が足りない")
+                    self.s["nisa_skipped"] = self.s.get("nisa_skipped", 0) + 1
+                    return
+                fee = self._fee(px * shares)
+                cost = px * shares + fee
+            used[date[:4]] = used.get(date[:4], 0) + px * shares
         self.s["cash"] -= cost
         self.s["fees"] += fee
         stop = price - stopdist
@@ -119,7 +135,12 @@ class Engine:
             if p["partial"] or r["Close"] > p["entry"] + p["stopdist"]:
                 p["stop"] = max(p["stop"], p["highest"] - cfg["trail_atr"] * float(r["atr"]))
             mode = cfg.get("entry", "breakout")
-            if mode == "rsi_macd" and r["rsi"] >= cfg.get("rsi_exit", 70):
+            if mode == "pullback":
+                if r["Close"] > r["sma5"]:
+                    self.s["orders"].append({"side": "sell", "code": code, "shares": p["shares"], "reason": "反発した（5日平均を上回った）"})
+                elif p["days"] >= cfg.get("pb_hold_days", 10):
+                    self.s["orders"].append({"side": "sell", "code": code, "shares": p["shares"], "reason": "反発しないので手じまい"})
+            elif mode == "rsi_macd" and r["rsi"] >= cfg.get("rsi_exit", 70):
                 self.s["orders"].append({"side": "sell", "code": code, "shares": p["shares"], "reason": "RSIが70以上（買われすぎ）"})
             elif mode == "breakout" and r["Close"] < r["sma75"]:
                 self.s["orders"].append({"side": "sell", "code": code, "shares": p["shares"], "reason": "上昇トレンドが崩れた"})
@@ -137,7 +158,14 @@ class Engine:
                 r = d.loc[date]
                 if r[["sma25", "sma75", "atr", "hh", "vol20", "rsi", "mom60"]].isna().any():
                     continue
-                if cfg.get("entry", "breakout") == "rsi_macd":
+                if cfg.get("min_turn_hist") and not (r.get("turn20", 0) >= cfg["min_turn_hist"]):
+                    continue   # その当時、売買が少なかった株は買わない
+                if cfg.get("entry", "breakout") == "pullback":
+                    # 長い上昇トレンド（200日平均より上）の中で、数日だけ急に売られた株を買う
+                    if (pd.notna(r["sma200"]) and r["Close"] > r["sma200"] and r["rsi2"] < cfg.get("pb_rsi2", 10)
+                            and r["Close"] < r["sma5"]):
+                        cands.append((-r["rsi2"] + qw * quality.get(code, 0), code, r))
+                elif cfg.get("entry", "breakout") == "rsi_macd":
                     # 売られすぎ(RSI30以下)のあと、MACDがゴールデンクロス → 反発の始まりを買う
                     if r["rsi_min3"] <= cfg.get("rsi_entry", 30) and r["macd_gc"]:
                         cands.append((-r["rsi_min3"], code, r))
@@ -165,7 +193,9 @@ class Engine:
                 roundtrip = 2 * shares * close * (cfg["fee_rate"] + cfg["slippage"])
                 if cfg["target_r"] * stopdist * shares < cfg["min_reward_cost_ratio"] * roundtrip:
                     continue  # 手数料負けしやすい取引はしない
-                if cfg.get("entry", "breakout") == "rsi_macd":
+                if cfg.get("entry", "breakout") == "pullback":
+                    reason = f"上昇トレンド中の一時的な下げ（RSI2={r['rsi2']:.0f}）"
+                elif cfg.get("entry", "breakout") == "rsi_macd":
                     reason = f"売られすぎから反発（RSI最低{r['rsi_min3']:.0f}・MACDゴールデンクロス）"
                 else:
                     reason = f"高値更新・上昇トレンド・出来高増 (60日で{r['mom60'] * 100:+.0f}%)"
