@@ -33,6 +33,31 @@ def load_prices(codes, period="6y"):
     return out
 
 
+def load_prices_fresh(codes, period="3mo"):
+    """日足を取り、日足にまだ出ていない最近の日を5分足から作って足す（無料データは日足の更新が遅れることがあるため）"""
+    out = load_prices(codes, period=period)
+    try:
+        tickers = [_ticker(c) for c in codes]
+        m5 = yf.download(tickers, period="5d", interval="5m", auto_adjust=True, progress=False, group_by="ticker", threads=True)
+    except Exception:
+        return out
+    for c, t in zip(codes, tickers):
+        try:
+            d = m5[t][["Open", "High", "Low", "Close", "Volume"]].dropna(subset=["Open", "Close"])
+        except KeyError:
+            continue
+        if d.empty:
+            continue
+        d.index = d.index.tz_convert("Asia/Tokyo")
+        g = d.groupby(d.index.date).agg({"Open": "first", "High": "max", "Low": "min", "Close": "last", "Volume": "sum"})
+        g.index = pd.to_datetime(g.index)
+        base = out.get(c)
+        new = g[g.index > base.index[-1]] if base is not None and len(base) else g
+        if len(new):
+            out[c] = pd.concat([base, new]) if base is not None else new
+    return out
+
+
 def add_indicators(d, breakout_days=20):
     """移動平均・ATR(値動きの大きさ)・RSI・高値更新などを計算（その日までのデータだけを使う）"""
     d = d.copy()

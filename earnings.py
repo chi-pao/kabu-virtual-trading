@@ -29,15 +29,30 @@ CFG = {"capital": 1000000, "slots": 8, "per_pos": 0.125, "use_rev": False, "slip
        "rev_min": 0.20, "rev_hold": 5, "prog_min": 0.20, "prog_hold": 20, "start": "2026-11-13"}
 
 
+FC = DIR / "会社予想.json"   # 会社ごとの最新の利益予想（本決算で「予想を上回ったか」を見るため）
+
+
 def load():
     if ST.exists():
-        return json.loads(ST.read_text(encoding="utf-8"))
-    return {"cfg": CFG, "cash": float(CFG["capital"]), "positions": {}, "pending": [], "trades": [],
-            "equity": [], "log": [], "seen": {}, "last_day": None}
+        s = json.loads(ST.read_text(encoding="utf-8"))
+    else:
+        s = {"cfg": CFG, "cash": float(CFG["capital"]), "positions": {}, "pending": [], "trades": [],
+             "equity": [], "log": [], "seen": {}, "last_day": None}
+    s["fc"] = json.loads(FC.read_text(encoding="utf-8")) if FC.exists() else {}
+    return s
+
+
+def save_fc(s):
+    DIR.mkdir(exist_ok=True)
+    FC.write_text(json.dumps(s.get("fc", {}), ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
 
 
 def save(s):
     DIR.mkdir(exist_ok=True)
+    save_fc(s)
+    s = {k: v for k, v in s.items() if k != "fc"}
+    old = (datetime.now(JST) - timedelta(days=10)).strftime("%Y-%m-%d")
+    s["day_pending"] = [p for p in s.get("day_pending", []) if p["disc"] >= old]
     s["seen"] = {d: v for d, v in s["seen"].items() if d >= (datetime.now(JST) - timedelta(days=10)).strftime("%Y%m%d")}
     ST.write_text(json.dumps(s, ensure_ascii=False, indent=1), encoding="utf-8")
 
@@ -52,14 +67,60 @@ def tradable():
     return dict(json.loads(p.read_text(encoding="utf-8"))["tradable"]) if p.exists() else {}
 
 
-def scan(s, uni):
-    """まだ読んでいない開示を読み、合図が出た会社を「買う候補」に入れる（直近3日分は毎回見直す）"""
+def handle(s, r, sm, day, uni, seed=False):
+    """1つの開示から、会社予想の記録を更新し、合図（中期用・デイトレ用）を作る"""
+    c = s["cfg"]
+    code = r["code"]
+    fc = s.setdefault("fc", {})
+    name = uni.get(code, r["name"])
+    meta = {"code": code, "name": name, "disc": day, "time": r["time"] or "15:00"}
+    swing = dayc = None
+    if sm["kind"] == "rev" and sm["prev"] and sm["prev"] > 0 and sm["new"] is not None:
+        ch = sm["new"] / sm["prev"] - 1
+        why = f"今期の利益予想を{ch * 100:+.0f}%引き上げ（{sm['prev'] / 1e8:,.1f}億→{sm['new'] / 1e8:,.1f}億円）"
+        if c.get("use_rev", True) and ch >= c["rev_min"]:
+            swing = {"kind": "上方修正", "val": ch, "hold": c["rev_hold"], "why": why}
+        if ch >= DAY["min"]:
+            dayc = {"kind": "予想引き上げ", "val": ch, "why": why}
+    elif sm["kind"] == "q" and sm["fc"] and sm["fc"] > 0 and sm["act"] is not None:
+        ahead = sm["act"] / sm["fc"] - sm["q"] / 4
+        if ahead >= c["prog_min"]:
+            swing = {"kind": "進み具合", "val": ahead, "hold": c["prog_hold"],
+                     "why": f"第{sm['q']}四半期で今期予想の{sm['act'] / sm['fc'] * 100:.0f}%を達成（普通は{sm['q'] * 25}%）"}
+    elif sm["kind"] == "fy" and sm["act"] is not None:
+        old = fc.get(code)
+        if old and old["v"] > 0 and old["d"] >= (pd.Timestamp(day) - pd.Timedelta(days=400)).strftime("%Y-%m-%d"):
+            beat = sm["act"] / old["v"] - 1
+            if beat >= DAY["min"]:
+                dayc = {"kind": "本決算が予想超え", "val": beat,
+                        "why": f"1年の利益が会社予想を{beat * 100:+.0f}%上回った（予想{old['v'] / 1e8:,.1f}億→実績{sm['act'] / 1e8:,.1f}億円）"}
+    # 会社予想の記録（次の本決算で「予想を上回ったか」を判断するため）
+    newfc = {"rev": sm.get("new"), "q": sm.get("fc"), "fy": sm.get("next_fc")}[sm["kind"]]
+    if newfc is not None:
+        fc[code] = {"v": newfc, "d": day}
+    if seed:
+        return
+    if swing and not any(p["code"] == code and p["kind"] == swing["kind"] for p in s["pending"]):
+        s["pending"].append({**swing, **meta})
+        log(s, day, f"合図 {name}({code}) {swing['why']} → 翌朝、上げて始まれば買う（{swing['hold']}日持つ）")
+    if dayc and code in s.get("day_uni", uni) and not any(p["code"] == code and p["disc"] == day for p in s.setdefault("day_pending", [])):
+        s["day_pending"].append({**dayc, **meta})
+        log(s, day, f"デイトレ候補 {name}({code}) {dayc['why']} → 翌朝の上げ幅が0〜5%なら寄りで買い、大引けで売る")
+
+
+DAY = {"min": 0.10, "gap_max": 0.05, "per_trade": 300000, "max_trades": 3, "min_turnover": 1e8, "slippage": 0.001}
+
+
+def scan(s, uni, start=None, seed=False):
+    """まだ読んでいない開示を読み、合図が出た会社を「買う候補」に入れる（直近3日分は毎回見直す）
+    seed=True のときは、会社予想の記録だけを作る（過去31日分の準備用）"""
     c = s["cfg"]
     today = datetime.now(JST).date()
-    start = max(datetime.strptime(c["start"], "%Y-%m-%d").date(), today - timedelta(days=3))
-    if s["last_day"]:
-        start = min(start, datetime.strptime(s["last_day"], "%Y-%m-%d").date() + timedelta(days=1))
-        start = max(start, today - timedelta(days=9))
+    if start is None:
+        start = max(datetime.strptime(c["start"], "%Y-%m-%d").date(), today - timedelta(days=3))
+        if s["last_day"]:
+            start = min(start, datetime.strptime(s["last_day"], "%Y-%m-%d").date() + timedelta(days=1))
+            start = max(start, today - timedelta(days=9))
     d = start
     while d <= today:
         key = d.strftime("%Y%m%d")
@@ -68,7 +129,7 @@ def scan(s, uni):
         n_new = 0
         for r in rows:
             t = r["title"]
-            if not r["xbrl"] or r["xbrl"] in seen or r["code"] not in uni or "訂正" in t:
+            if not r["xbrl"] or (not seed and r["xbrl"] in seen) or r["code"] not in uni or "訂正" in t:
                 continue
             if not ("決算短信" in t or ("業績予想" in t and "修正" in t) or ("予想" in t and "差異" in t)):
                 continue
@@ -76,25 +137,10 @@ def scan(s, uni):
             x = tdnet.facts(r["xbrl"])
             time.sleep(0.3)
             sm = x and tdnet.summarize(x)
-            if not sm:
-                continue
-            cand = None
-            if sm["kind"] == "rev" and c.get("use_rev", True) and sm["prev"] and sm["prev"] > 0 and sm["new"] is not None:
-                ch = sm["new"] / sm["prev"] - 1
-                if ch >= c["rev_min"]:
-                    cand = {"kind": "上方修正", "val": ch, "hold": c["rev_hold"],
-                            "why": f"今期の利益予想を{ch * 100:+.0f}%引き上げ（{sm['prev'] / 1e8:,.1f}億→{sm['new'] / 1e8:,.1f}億円）"}
-            elif sm["kind"] == "q" and sm["fc"] and sm["fc"] > 0 and sm["act"] is not None:
-                ahead = sm["act"] / sm["fc"] - sm["q"] / 4
-                if ahead >= c["prog_min"]:
-                    cand = {"kind": "進み具合", "val": ahead, "hold": c["prog_hold"],
-                            "why": f"第{sm['q']}四半期で今期予想の{sm['act'] / sm['fc'] * 100:.0f}%を達成（普通は{sm['q'] * 25}%）"}
-            if cand and not any(p["code"] == r["code"] and p["kind"] == cand["kind"] for p in s["pending"]):
-                cand.update({"code": r["code"], "name": uni.get(r["code"], r["name"]),
-                             "disc": d.strftime("%Y-%m-%d"), "time": r["time"] or "15:00"})
-                s["pending"].append(cand)
-                log(s, cand["disc"], f"合図 {cand['name']}({r['code']}) {cand['why']} → 翌朝、上げて始まれば買う")
-        s["seen"][key] = sorted(seen)
+            if sm:
+                handle(s, r, sm, d.strftime("%Y-%m-%d"), uni, seed)
+        if not seed:
+            s["seen"][key] = sorted(seen)
         print(f"{key}: 開示{len(rows)}件、新しく読んだ決算・修正 {n_new}件")
         d += timedelta(days=1)
 
@@ -109,8 +155,8 @@ def entry_day(days, disc, tm):
 def replay(s):
     c = s["cfg"]
     codes = sorted({p["code"] for p in s["pending"]} | set(s["positions"]))
-    px = data.load_prices(codes, period="3mo") if codes else {}
-    ix = data.load_prices([data.INDEX], period="3mo")[data.INDEX]
+    px = data.load_prices_fresh(codes, period="3mo") if codes else {}
+    ix = data.load_prices_fresh([data.INDEX], period="3mo")[data.INDEX]
     days = ix.index
     last = pd.Timestamp(s["last_day"]) if s["last_day"] else pd.Timestamp(c["start"]) - pd.Timedelta(days=1)
     now = datetime.now(JST)
@@ -137,9 +183,14 @@ def replay(s):
             if sh < c["lot"]:
                 log(s, ds, f"見送り {p['name']}: 100株を買うお金が足りない（{op * 100:,.0f}円）"); continue
             s["cash"] -= sh * buy
+            # NISA を優先して使う（成長投資枠は1年に240万円まで。売っても枠は翌年まで戻らない）。足りなければ特定口座
+            used = s.setdefault("nisa_used", {})
+            acct = "NISA" if used.get(ds[:4], 0) + sh * buy <= NISA_YEAR else "特定"
+            if acct == "NISA":
+                used[ds[:4]] = used.get(ds[:4], 0) + sh * buy
             s["positions"][p["code"]] = {"name": p["name"], "shares": sh, "buy": buy, "entry_date": ds, "days": 0,
-                                         "hold": p["hold"], "kind": p["kind"], "why": p["why"], "last": op}
-            log(s, ds, f"買い {p['name']}({p['code']}) {sh}株 @{buy:,.0f}円  {p['hold']}日後に売る [{p['why']}]")
+                                         "hold": p["hold"], "kind": p["kind"], "why": p["why"], "last": op, "account": acct}
+            log(s, ds, f"買い {p['name']}({p['code']}) {sh}株 @{buy:,.0f}円 [{acct}]  {p['hold']}日後に売る [{p['why']}]")
         # 引け：持つ日数が来たものを売る
         for code in list(s["positions"]):
             h = s["positions"][code]
@@ -153,7 +204,8 @@ def replay(s):
                 s["cash"] += sell * h["shares"]
                 s["trades"].append({"code": code, "name": h["name"], "kind": h["kind"], "entry_date": h["entry_date"],
                                     "exit_date": ds, "shares": h["shares"], "entry": round(h["buy"], 1), "exit": round(sell, 1),
-                                    "pnl": round(pnl), "ret": round(sell / h["buy"] - 1, 4), "why": h["why"]})
+                                    "pnl": round(pnl), "ret": round(sell / h["buy"] - 1, 4), "why": h["why"],
+                                    "account": h.get("account", "特定")})
                 log(s, ds, f"売り {h['name']}({code}) {h['shares']}株 @{sell:,.0f}円  損益 {pnl:+,.0f}円 [{h['days']}日持った]")
                 del s["positions"][code]
         eqv = s["cash"] + sum(p["shares"] * p["last"] for p in s["positions"].values())
@@ -161,9 +213,17 @@ def replay(s):
         s["last_day"] = ds
 
 
+NISA_YEAR = 2400000
+
+
 def main():
     s = load()
     uni = tradable()
+    if len(sys.argv) > 1 and sys.argv[1] == "seed":   # 過去31日分の開示から、会社予想の記録だけを作る
+        scan(s, uni, start=datetime.now(JST).date() - timedelta(days=31), seed=True)
+        save_fc(s)
+        print(f"会社予想の記録: {len(s.get('fc', {}))}社")
+        return
     scan(s, uni)
     replay(s)   # 15:40より前は今日の株価が確定していないので、昨日までを処理
     save(s)

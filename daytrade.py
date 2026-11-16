@@ -159,8 +159,22 @@ def run():
     sp = DIR / "state.json"
     st = json.loads(sp.read_text(encoding="utf-8")) if sp.exists() else None
     cfg = {**BASE, **(st["cfg"] if st else json.loads((DIR / "使う作戦.json").read_text(encoding="utf-8")))}
-    names, bars, ix, prevc = load("5d")
     now = datetime.now(JST)
+    if cfg["strategy"] == "earnings":   # 2026-11-17から：決算デイトレ（寄りで買って大引けで売る）
+        from kabu import eday, data as kd
+        ixd = kd.load_prices_fresh([kd.INDEX], period="1mo")[kd.INDEX].index
+        done = [d.date() for d in ixd if d.date() < now.date() or (d.date() == now.date() and now.hour * 60 + now.minute >= 15 * 60 + 40)]
+        start = pd.Timestamp(cfg.get("switch", st["start"])).date()
+        last = pd.Timestamp(st["last"]).date() if st.get("last") else None
+        todo = [d for d in done if d >= start and (last is None or d > last)]
+        if todo:
+            eday.run_days(st["engine"], todo)
+            st["last"] = str(todo[-1])
+        sp.write_text(json.dumps(st, ensure_ascii=False, indent=1, default=str), encoding="utf-8")
+        s = summary(st["engine"], cfg["capital"])
+        print(f"処理した日: {', '.join(map(str, todo)) or 'なし'}  ここまで損益 {s['損益']:+,.0f}円（取引{s['取引回数']}回）")
+        return
+    names, bars, ix, prevc = load("5d")
     done = [d for d in days_of(bars) if d < now.date() or (d == now.date() and now.hour * 60 + now.minute >= 15 * 60 + 40)]
     start = pd.Timestamp(st["start"] if st else cfg.get("start", str(now.date()))).date()
     last = pd.Timestamp(st["last"]).date() if st and st.get("last") else None
@@ -199,6 +213,26 @@ def live():
     sp = DIR / "state.json"
     st = json.loads(sp.read_text(encoding="utf-8")) if sp.exists() else None
     cfg = {**BASE, **(st["cfg"] if st else json.loads((DIR / "使う作戦.json").read_text(encoding="utf-8")))}
+    if cfg["strategy"] == "earnings":
+        from kabu import eday
+        now = datetime.now(JST)
+        total_before = st["engine"]["cash"] - cfg["capital"]
+        base = {"ok": True, "capital": cfg["capital"], "updated": now.strftime("%H:%M"), "mode": "earnings",
+                "or_end": "09:00", "last_entry": "09:00", "flat_at": "15:30", "stop_new": False, "watch": [], "pending": []}
+        L = eday.live(st["engine"], cfg["capital"])
+        if not L:
+            return {"ok": False, "msg": "株価データを取得できませんでした"}
+        if st.get("last") and pd.Timestamp(st["last"]).date() >= pd.Timestamp(L["date"]).date():
+            trades = [t for t in st["engine"]["trades"] if t["date"] == L["date"]]
+            return {**base, "date": L["date"], "finished": True, "phase": "この日の取引は終了（記録済み）", "trades": trades[::-1],
+                    "open": [], "realized": sum(t["pnl"] for t in trades), "unrealized": 0, "total": total_before,
+                    "as_of": "15:30", "next": L["next"], "skipped": L["skipped"]}
+        hm = now.hour * 60 + now.minute
+        phase = ("今日は決算の合図が出た株がないので、お休み" if not L["open"] else
+                 "朝に買った株を、大引け（15:30）で売る予定" if hm < 15 * 60 + 30 else "今日の取引は終了（このあと記録されます）")
+        return {**base, "date": L["date"], "finished": False, "phase": phase, "as_of": "約20分前", "trades": [],
+                "open": L["open"], "realized": 0, "unrealized": L["unrealized"], "total": total_before,
+                "next": L["next"], "skipped": L["skipped"]}
     names, bars, ix, prevc = load("5d")
     days = days_of(bars)
     if not days:

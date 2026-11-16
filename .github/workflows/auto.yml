@@ -40,16 +40,16 @@ jobs:
         continue-on-error: true    # 失敗してもグラフの文字が化けるだけなので、売買は続ける
         run: sudo apt-get update -qq > /dev/null; sudo apt-get install -y -qq fonts-noto-cjk > /dev/null
 
+      - name: 決算作戦（適時開示を読み、決算スイングを進め、決算デイトレの候補を作る）
+        if: github.event.schedule == '30 7 * * 1-5' || github.event.schedule == '0 9,12 * * 1-5' || (github.event_name == 'workflow_dispatch' && github.event.inputs.task == 'trade')
+        continue-on-error: true    # ここで失敗しても、他の売買の結果の保存は続ける
+        run: python earnings.py
+
       - name: 仮想売買・仮想デイトレ
         if: github.event.schedule == '30 7 * * 1-5' || github.event.schedule == '0 9,12 * * 1-5' || (github.event_name == 'workflow_dispatch' && github.event.inputs.task == 'trade')
         run: |
           python paper.py
           python daytrade.py run
-
-      - name: 決算作戦（適時開示を読んで仮想売買）
-        if: github.event.schedule == '30 7 * * 1-5' || github.event.schedule == '0 9,12 * * 1-5' || (github.event_name == 'workflow_dispatch' && github.event.inputs.task == 'trade')
-        continue-on-error: true    # ここで失敗しても、他の売買の結果の保存は続ける
-        run: python earnings.py
 
       - name: 全銘柄の「調べる」用データ（約3,700社）
         if: github.event.schedule == '30 7 * * 1-5' || github.event.schedule == '0 9,12 * * 1-5' || (github.event_name == 'workflow_dispatch' && github.event.inputs.task == 'trade')

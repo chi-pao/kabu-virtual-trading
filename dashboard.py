@@ -160,6 +160,69 @@ def market_status():
     return "取引時間外"
 
 
+# ---------- 作戦の成績表（どの作戦を本番に進めるか・お金を増やすかを、前もって決めた決まりで判断する） ----------
+# 合格：仮想で50回以上売買し、プロフィットファクター1.2以上・1回平均がプラス・落ち込みが上限以内
+#   → 少額（10〜30万円）で本番の候補。本番でも仮想と同じくらいの成績が3か月続けば、段階的に増やす
+# 見直し：50回以上で合格の条件を満たさない、または落ち込みが上限を超えた → 新しく買うのを止めて原因を調べる
+GRADUATE = {"min_trades": 50, "min_pf": 1.2}
+TAX = 0.20315
+NISA_YEAR = 2400000
+
+
+def _metrics(pnls, equity_series, capital, dd_limit, taxed_pnls=None):
+    wins = [p for p in pnls if p > 0]
+    loss = [p for p in pnls if p <= 0]
+    pf = (sum(wins) / -sum(loss)) if loss and sum(loss) < 0 else (None if not wins else float("inf"))
+    eq = pd.Series(equity_series or [capital], dtype=float)
+    dd = float((eq / eq.cummax().clip(lower=capital) - 1).min())
+    total = float(eq.iloc[-1] - capital)
+    taxed = sum(taxed_pnls if taxed_pnls is not None else pnls)
+    tax = max(taxed, 0) * TAX   # 特定口座の分だけ税金（年ごとの相殺は簡単のため1年分とみなす）
+    n = len(pnls)
+    if n >= GRADUATE["min_trades"]:
+        ok = pf is not None and pf >= GRADUATE["min_pf"] and sum(pnls) > 0 and dd > dd_limit
+        status = "合格（少額で本番の候補）" if ok else "見直し"
+    elif dd <= dd_limit:
+        status = "見直し（落ち込みが上限を超えた）"
+    else:
+        status = "仮想テスト中"
+    return {"trades": n, "win": len(wins) / n if n else None, "avg": sum(pnls) / n if n else None,
+            "pf": None if pf in (None, float("inf")) else round(pf, 2), "dd": dd, "dd_limit": dd_limit,
+            "total": total, "after_tax": total - tax, "status": status,
+            "progress": f"{min(n, GRADUATE['min_trades'])}/{GRADUATE['min_trades']}回"}
+
+
+def scorecard(eng, equity, capital, dst, est):
+    rows = []
+    if est:
+        tr = est["trades"]
+        m = _metrics([t["pnl"] for t in tr], [v for _, v in est["equity"]], est["cfg"]["capital"], -0.20,
+                     [t["pnl"] for t in tr if t.get("account") != "NISA"])
+        yr = datetime.now(JST).strftime("%Y")
+        rows.append({"name": "決算スイング", "account": "NISA優先（枠を超えたら特定）", "hold": "20日",
+                     "evidence": "過去2年 +47%（前半+50%・後半-2%）・落ち込み-17%",
+                     "nisa_used": est.get("nisa_used", {}).get(yr, 0), **m})
+    if dst:
+        de, cfg_d = dst["engine"], dst["cfg"]
+        sw = cfg_d.get("switch")
+        new = [t for t in de["trades"] if sw and t["date"] >= sw]
+        old = [t for t in de["trades"] if not sw or t["date"] < sw]
+        cap_new = cfg_d["capital"] + sum(t["pnl"] for t in old)
+        eq_new = [d["equity"] for d in de["days"] if sw and d["date"] >= sw]
+        if sw:
+            rows.append({"name": "決算デイトレ", "account": "特定（NISAは売ると枠が戻らないので不向き）", "hold": "その日のうち",
+                         "evidence": "過去2年 +44%（前半+18%・後半+22%）・落ち込み-10%",
+                         **_metrics([t["pnl"] for t in new], [cap_new] + eq_new, cap_new, -0.10)})
+        m = _metrics([t["pnl"] for t in old], [cfg_d["capital"]] + [d["equity"] for d in de["days"] if not sw or d["date"] < sw],
+                     cfg_d["capital"], -0.10)
+        rows.append({"name": "旧デイトレ（寄り付きブレイク）", "account": "特定", "hold": "その日のうち",
+                     "evidence": "過去60日の確認でも負け", **m, "status": "停止（11/17に決算デイトレへ交代）" if sw else m["status"]})
+    m = _metrics([t["pnl"] for t in eng["trades"]], [v for _, v in eng["equity"]] + [equity], capital, -0.20)
+    rows.append({"name": "中期（高値ブレイク）", "account": "NISA向き", "hold": "数週間〜数か月",
+                 "evidence": "当時のデータだけで試すと5年で±0%（実力が弱い）", **m})
+    return {"rules": GRADUATE, "rows": rows}
+
+
 def api_summary():
     c = cfg()
     st = state()
@@ -299,6 +362,7 @@ def api_summary():
                 "trades": est["trades"][-30:][::-1], "log": est["log"][-15:][::-1]}
 
     equity = eng["cash"] + mv
+    board = scorecard(eng, equity, c["capital"], dst, est)
     ixs = ix["Close"]
     eq = eng["equity"]
     bench = []
@@ -312,7 +376,7 @@ def api_summary():
         "index": {"price": ix_price, "chg": ix_price / ix_prev - 1, "sma75": float(sma75.iloc[-1]), "regime": regime},
         "macro_score": (st or {}).get("news", {}).get("macro_score"), "last_run": (st or {}).get("last_date"),
         "positions": positions, "orders": orders, "watch": watch, "picks": picks, "mid": mids[:8], "long": longs[:8], "trades": eng["trades"][-30:][::-1],
-        "equity_curve": eq, "bench": bench, "day": day, "earn": earn, "pick_scope": scope, "log": eng["log"][-20:][::-1],
+        "equity_curve": eq, "bench": bench, "day": day, "earn": earn, "board": board, "pick_scope": scope, "log": eng["log"][-20:][::-1],
         "rules": {"risk": c["risk_per_trade"], "target_r": c["target_r"], "max_pos": c["max_positions"]},
     }
 
