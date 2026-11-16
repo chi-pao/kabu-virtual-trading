@@ -4,7 +4,9 @@
   ① 会社が今期の利益予想を20%以上引き上げた → 翌朝、前日より高く始まったら買い、5日後の引けで売る
   ② 四半期の時点で、今期予想に対する利益の進み具合が、普通（1Q=25%・2Q=50%・3Q=75%）より20ポイント以上多い
      → 翌朝、前日より高く始まったら買い、20日後の引けで売る
-発表は東証の適時開示（TDnet）から毎日読む。1社に使うのは資産の25%まで、同時に4社まで。
+発表は東証の適時開示（TDnet）から毎日読む。1社に使うのは資産の12.5%まで、同時に8社まで。
+2026-11-16 見直し：①は5日で利益が小さく、②の枠を奪っていたので止める（use_rev）。4社→8社に分けると、
+過去2年の確認で落ち込みが -30% → -17% になり、どの順で選んでも成績がぶれにくかった。
 
 使い方: py -3.14 earnings.py        … 前回の続きから今日までを処理（取りこぼした日もまとめて処理する）
 """
@@ -23,7 +25,7 @@ ROOT = Path(__file__).parent
 DIR = ROOT / "決算作戦"
 ST = DIR / "state.json"
 JST = timezone(timedelta(hours=9))
-CFG = {"capital": 1000000, "slots": 4, "per_pos": 0.25, "slippage": 0.002, "lot": 100,
+CFG = {"capital": 1000000, "slots": 8, "per_pos": 0.125, "use_rev": False, "slippage": 0.002, "lot": 100,
        "rev_min": 0.20, "rev_hold": 5, "prog_min": 0.20, "prog_hold": 20, "start": "2026-11-13"}
 
 
@@ -77,7 +79,7 @@ def scan(s, uni):
             if not sm:
                 continue
             cand = None
-            if sm["kind"] == "rev" and sm["prev"] and sm["prev"] > 0 and sm["new"] is not None:
+            if sm["kind"] == "rev" and c.get("use_rev", True) and sm["prev"] and sm["prev"] > 0 and sm["new"] is not None:
                 ch = sm["new"] / sm["prev"] - 1
                 if ch >= c["rev_min"]:
                     cand = {"kind": "上方修正", "val": ch, "hold": c["rev_hold"],
