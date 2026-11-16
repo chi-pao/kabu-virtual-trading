@@ -244,10 +244,35 @@
    "name": "アステリア",
    "disc": "2026-11-13",
    "time": "12:00"
+  },
+  {
+   "kind": "進み具合",
+   "val": 0.23657352941176468,
+   "hold": 20,
+   "why": "第2四半期で今期予想の74%を達成（普通は50%）",
+   "code": "6890",
+   "name": "フェローテック",
+   "disc": "2026-11-16",
+   "time": "15:30"
+  },
+  {
+   "kind": "進み具合",
+   "val": 0.4136666666666666,
+   "hold": 20,
+   "why": "第2四半期で今期予想の91%を達成（普通は50%）",
+   "code": "7256",
+   "name": "河西工業",
+   "disc": "2026-11-16",
+   "time": "12:30"
   }
  ],
  "trades": [],
- "equity": [],
+ "equity": [
+  [
+   "2026-11-13",
+   1000000
+  ]
+ ],
  "log": [
   "2026-11-13 合図 日本山村硝子(5210) 第2四半期で今期予想の74%を達成（普通は50%） → 翌朝、上げて始まれば買う",
   "2026-11-13 合図 グローバルウェイ(3936) 第2四半期で今期予想の76%を達成（普通は50%） → 翌朝、上げて始まれば買う",
@@ -273,7 +298,9 @@
   "2026-11-13 合図 北紡(3409) 第2四半期で今期予想の111%を達成（普通は50%） → 翌朝、上げて始まれば買う",
   "2026-11-13 合図 東北銀行(8349) 第2四半期で今期予想の76%を達成（普通は50%） → 翌朝、上げて始まれば買う",
   "2026-11-13 合図 アステリア(3853) 第2四半期で今期予想の141%を達成（普通は50%） → 翌朝、上げて始まれば買う",
-  "2026-11-16 作戦を見直し：上方修正（5日）はやめて進み具合（20日）だけにする・8社に分ける（過去2年の確認で、落ち込みが-30%→-17%、どの順で選んでも成績が安定）"
+  "2026-11-16 作戦を見直し：上方修正（5日）はやめて進み具合（20日）だけにする・8社に分ける（過去2年の確認で、落ち込みが-30%→-17%、どの順で選んでも成績が安定）",
+  "2026-11-16 合図 フェローテック(6890) 第2四半期で今期予想の74%を達成（普通は50%） → 翌朝、上げて始まれば買う",
+  "2026-11-16 合図 河西工業(7256) 第2四半期で今期予想の91%を達成（普通は50%） → 翌朝、上げて始まれば買う"
  ],
  "seen": {
   "20261113": [
@@ -689,7 +716,55 @@
    "https://www.release.tdnet.info/inbs/091220261113578620.zip",
    "https://www.release.tdnet.info/inbs/091220261113579575.zip"
   ],
-  "20261114": []
+  "20261114": [],
+  "20261115": [],
+  "20261116": [
+   "https://www.release.tdnet.info/inbs/081220261007547095.zip",
+   "https://www.release.tdnet.info/inbs/081220261022554837.zip",
+   "https://www.release.tdnet.info/inbs/081220261028558479.zip",
+   "https://www.release.tdnet.info/inbs/081220261031561995.zip",
+   "https://www.release.tdnet.info/inbs/081220261102562804.zip",
+   "https://www.release.tdnet.info/inbs/081220261106567025.zip",
+   "https://www.release.tdnet.info/inbs/081220261111573763.zip",
+   "https://www.release.tdnet.info/inbs/081220261112574364.zip",
+   "https://www.release.tdnet.info/inbs/081220261112576053.zip",
+   "https://www.release.tdnet.info/inbs/081220261112576795.zip",
+   "https://www.release.tdnet.info/inbs/081220261112577312.zip",
+   "https://www.release.tdnet.info/inbs/081220261113577768.zip",
+   "https://www.release.tdnet.info/inbs/081220261113578006.zip",
+   "https://www.release.tdnet.info/inbs/081220261113579317.zip",
+   "https://www.release.tdnet.info/inbs/081220261113579665.zip",
+   "https://www.release.tdnet.info/inbs/081220261113579949.zip",
+   "https://www.release.tdnet.info/inbs/081220261113580252.zip",
+   "https://www.release.tdnet.info/inbs/081220261113580302.zip",
+   "https://www.release.tdnet.info/inbs/081220261113580309.zip",
+   "https://www.release.tdnet.info/inbs/081220261113580353.zip",
+   "https://www.release.tdnet.info/inbs/081220261113580362.zip",
+   "https://www.release.tdnet.info/inbs/081220261113580387.zip",
+   "https://www.release.tdnet.info/inbs/081220261115580569.zip",
+   "https://www.release.tdnet.info/inbs/081220261116580670.zip",
+   "https://www.release.tdnet.info/inbs/081220261116580778.zip",
+   "https://www.release.tdnet.info/inbs/081220261116580795.zip",
+   "https://www.release.tdnet.info/inbs/081220261116580943.zip",
+   "https://www.release.tdnet.info/inbs/081220261116580944.zip",
+   "https://www.release.tdnet.info/inbs/081220261116580955.zip",
+   "https://www.release.tdnet.info/inbs/081220261116580983.zip",
+   "https://www.release.tdnet.info/inbs/081220261116581028.zip",
+   "https://www.release.tdnet.info/inbs/081220261116581059.zip",
+   "https://www.release.tdnet.info/inbs/081220261116581067.zip",
+   "https://www.release.tdnet.info/inbs/081220261116581145.zip",
+   "https://www.release.tdnet.info/inbs/081220261116581156.zip",
+   "https://www.release.tdnet.info/inbs/081220261116581166.zip",
+   "https://www.release.tdnet.info/inbs/081220261116581170.zip",
+   "https://www.release.tdnet.info/inbs/081220261116581178.zip",
+   "https://www.release.tdnet.info/inbs/081220261116581195.zip",
+   "https://www.release.tdnet.info/inbs/081220261116581316.zip",
+   "https://www.release.tdnet.info/inbs/081220261116581695.zip",
+   "https://www.release.tdnet.info/inbs/091220261112574995.zip",
+   "https://www.release.tdnet.info/inbs/091220261113579680.zip",
+   "https://www.release.tdnet.info/inbs/091220261113580207.zip"
+  ],
+  "20261117": []
  },
- "last_day": null
+ "last_day": "2026-11-13"
 }

@@ -221,7 +221,7 @@ a{color:var(--accent)}
     </div>
   </section>
   <section class="card full">
-    <h2>決算作戦 <span class="muted">良い決算・予想の引き上げの翌朝に買い、5日または20日で売る・別の100万円</span></h2>
+    <h2>決算作戦 <span class="muted">決算の進み具合が良い会社を翌朝に買い、20日で売る・8社まで・別の100万円</span></h2>
     <div id="earn"></div>
   </section>
   <section class="card full">
@@ -397,7 +397,7 @@ async function loadSummary() {
     (E.positions.length ? E.positions.map(p => `<div class="pc" onclick="showChart('${p.code}')"><div class="row"><b>${esc(p.name)}</b><b class="${cls(p.pnl)}">${sgn(p.pnl)}</b></div>
       <div class="row muted"><span>${p.entry_date} に ${num(p.buy)}円で ${p.shares}株</span><span>${p.days}/${p.hold}日目</span></div>
       <div class="muted">${esc(p.kind)}：${esc(p.why)}</div></div>`).join("") : '<div class="muted" style="margin-top:4px">今は持っていません</div>') +
-    (E.pending.length ? `<div class="muted" style="margin-top:8px"><b>次の朝の候補</b>（前日より高く始まったら、強い順に4社まで買う）</div>` +
+    (E.pending.length ? `<div class="muted" style="margin-top:8px"><b>次の朝の候補</b>（前日より高く始まったら、強い順に8社まで買う）</div>` +
       E.pending.map(p => `<div class="muted">・${esc(p.name)}（${p.code}）${esc(p.why)}</div>`).join("") : "") +
     `<div class="tbl" style="margin-top:8px"><table>${E.trades.length ? "<tr><th>銘柄</th><th>買った日</th><th>売った日</th><th>株数</th><th>買値</th><th>売値</th><th>損益</th><th>合図</th></tr>" +
       E.trades.map(t => `<tr><td>${esc(t.name)}</td><td>${t.entry_date}</td><td>${t.exit_date}</td><td>${t.shares}</td><td>${num(t.entry)}</td><td>${num(t.exit)}</td>
