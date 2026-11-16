@@ -221,7 +221,12 @@ a{color:var(--accent)}
     </div>
   </section>
   <section class="card full">
-    <h2>決算作戦 <span class="muted">決算の進み具合が良い会社を翌朝に買い、20日で売る・8社まで・別の100万円</span></h2>
+    <h2>作戦の成績表 <span class="muted">前もって決めた決まりで、本番に進むか・お金を増やすかを判断</span></h2>
+    <div class="tbl"><table id="board"></table></div>
+    <div class="muted" id="boardnote" style="margin-top:6px"></div>
+  </section>
+  <section class="card full">
+    <h2>決算スイング <span class="muted">決算の進み具合が良い会社を翌朝に買い、20日で売る・8社まで・別の100万円</span></h2>
     <div id="earn"></div>
   </section>
   <section class="card full">
@@ -342,7 +347,7 @@ async function loadSummary() {
   document.getElementById("hdr").innerHTML = `<h1>仮想売買ボード <span class="badge ${S.market === "取引時間中" ? "on" : ""}">${S.market}</span></h1>` +
     k(`資産の合計（${["中期", D ? "デイトレ" : "", E ? "決算" : ""].filter(Boolean).join("＋")}）`, yen(capAll + pnlAll)) +
     k("損益の合計", `${sgn(pnlAll)} <small>${pct(pnlAll / capAll)}</small>`, cls(pnlAll)) +
-    (E ? k("決算作戦", `${yen(E.equity)} <small class="${cls(E.total)}">${sgn(E.total)}</small>`) : "") +
+    (E ? k("決算スイング", `${yen(E.equity)} <small class="${cls(E.total)}">${sgn(E.total)}</small>`) : "") +
     k("中期の売買", `${yen(S.equity)} <small class="${cls(S.pnl)}">${sgn(S.pnl)}</small>`) +
     (D ? k("デイトレ", `${yen(D.capital + D.total)} <small class="${cls(D.total)}">${sgn(D.total)}</small>`) +
          k(`デイトレ ${D.last_date ? D.last_date.slice(5).replace("-", "/") + "の損益" : ""}`, sgn(D.last_pnl), cls(D.last_pnl)) : "") +
@@ -392,6 +397,21 @@ async function loadSummary() {
     D.trades.map(t => `<tr><td>${esc(t.name)}</td><td>${t.date.slice(5).replace("-", "/")}</td><td>${t.in_time}→${t.out_time}</td><td>${t.shares}</td><td>${num(t.entry)}</td><td>${num(t.exit)}</td>
       <td class="${cls(t.pnl)}">${t.pnl >= 0 ? "+" : ""}${num(t.pnl)}</td><td style="text-align:left">${esc(t.reason)}</td></tr>`).join("")
     : '<tr><td class="empty">まだデイトレの記録はありません</td></tr>';
+  const B = S.board;
+  if (B) {
+    document.getElementById("board").innerHTML = "<tr><th>作戦</th><th>状態</th><th>損益</th><th>税引後</th><th>売買</th><th>勝率</th><th>1回平均</th><th>PF</th><th>落ち込み（上限）</th><th>口座</th><th>過去の確認</th></tr>" +
+      B.rows.map(r => `<tr><td><b>${esc(r.name)}</b><br><span class="muted">${esc(r.hold)}</span></td>
+        <td><span class="tag">${esc(r.status)}</span><br><span class="muted">${r.progress}</span></td>
+        <td class="${cls(r.total)}">${sgn(r.total)}</td><td class="${cls(r.after_tax)}">${sgn(r.after_tax)}</td><td>${r.trades}回</td>
+        <td>${r.win == null ? "-" : Math.round(r.win * 100) + "%"}</td><td class="${cls(r.avg)}">${r.avg == null ? "-" : sgn(r.avg)}</td>
+        <td>${r.pf ?? "-"}</td><td>${pct(r.dd)}（${pct(r.dd_limit)}）</td>
+        <td style="text-align:left">${esc(r.account)}${r.nisa_used != null ? `<br><span class="muted">今年のNISA枠 ${yen(r.nisa_used)} / 240万円</span>` : ""}</td>
+        <td style="text-align:left" class="muted">${esc(r.evidence)}</td></tr>`).join("");
+    document.getElementById("boardnote").innerHTML = `<b>合格の条件</b>：仮想で${B.rules.min_trades}回以上売買・PF（もうけ÷損）${B.rules.min_pf}以上・1回平均がプラス・落ち込みが上限以内。
+      合格したら少額（10〜30万円）で本番の候補 → 本番でも同じくらいの成績が3か月続けば段階的に増やす。<br>
+      <b>口座の使い分け</b>：数週間持つ作戦はNISA（利益に税金がかからない）を優先、デイトレは特定口座（NISAは売っても枠が戻らないため）。<br>
+      PF＝もうけの合計÷損の合計（1より大きければ、もうけの方が多い）。売買が少ないうちは運の影響が大きいので、回数がたまるまで判断しません。`;
+  }
   document.getElementById("earn").innerHTML = !E ? '<div class="empty">まだ始まっていません</div>' :
     `<div class="muted">資産 <b>${yen(E.equity)}</b>（<span class="${cls(E.total)}">${sgn(E.total)}</span>）・最終処理 ${E.last_day || "-"}</div>` +
     (E.positions.length ? E.positions.map(p => `<div class="pc" onclick="showChart('${p.code}')"><div class="row"><b>${esc(p.name)}</b><b class="${cls(p.pnl)}">${sgn(p.pnl)}</b></div>
@@ -432,7 +452,7 @@ async function loadLive() {
     h += `<div class="muted"><b>いま持っている株</b></div>` + L.open.map(p => `<div class="pc" data-code="${p.code}" onclick="showChart('${p.code}')">
       <div class="row"><b>${esc(p.name)} ${p.shares}株</b><b class="${cls(p.pnl)}">${sgn(p.pnl)}</b></div>
       <div class="row muted"><span>${p.time}に${num(p.entry)}円で${p.side}</span><span>今 ${num(p.price)}円</span></div>
-      <div class="muted">損切り ${num(p.stop)}円${p.be ? "（買値まで引き上げ済み）" : ""}・利確 ${num(p.target)}円・${esc(L.flat_at)}までに必ず売る</div></div>`).join("");
+      <div class="muted">${L.mode === "earnings" ? esc(p.setup) + "・大引けで売る" : `損切り ${num(p.stop)}円${p.be ? "（買値まで引き上げ済み）" : ""}・利確 ${num(p.target)}円・${esc(L.flat_at)}までに必ず売る`}</div></div>`).join("");
   }
   if ((L.pending || []).length) h += `<div class="muted">次の5分足で注文：${L.pending.map(o => esc(o.name) + " " + o.shares + "株 " + o.side).join("、")}</div>`;
   if (L.trades.length) {
@@ -442,6 +462,9 @@ async function loadLive() {
   } else if (!L.open.length) {
     h += `<div class="empty">今日はまだ売買していません</div>`;
   }
+  if ((L.skipped || []).length) h += `<div class="muted" style="margin-top:6px">今日の見送り：${L.skipped.map(x => esc(x.name) + "（" + esc(x.why) + "）").join("、")}</div>`;
+  if (L.mode === "earnings") h += `<div class="muted" style="margin-top:6px"><b>次の朝の候補</b>（上げ幅0〜5%で始まったら寄りで買い、大引けで売る）<br>` +
+    ((L.next || []).length ? L.next.map(c => `・${esc(c.name)}（${c.code}）${esc(c.why)}`).join("<br>") : "まだありません（夕方に決算を読んで決まります）") + "</div>";
   if (L.watch.length) {
     h += `<div class="muted" style="margin-top:6px"><b>もうすぐ買うかも</b>（朝の高値を上抜け＋出来高が増えたら買い）</div>` +
       L.watch.map(w => `<div class="lt row" onclick="showChart('${w.code}')" style="cursor:pointer"><span>${esc(w.name)}</span><span class="muted">${num(w.price)}円 → ${num(w.line)}円まで あと${pct(w.dist)}</span></div>`).join("");
