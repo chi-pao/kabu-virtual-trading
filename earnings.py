@@ -25,7 +25,7 @@ ROOT = Path(__file__).parent
 DIR = ROOT / "決算作戦"
 ST = DIR / "state.json"
 JST = timezone(timedelta(hours=9))
-CFG = {"capital": 1000000, "slots": 8, "per_pos": 0.125, "use_rev": False, "slippage": 0.002, "lot": 100,
+CFG = {"capital": 1000000, "slots": 8, "per_pos": 0.125, "max_pos": 0.25,"use_rev": False, "slippage": 0.002, "lot": 100,
        "rev_min": 0.20, "rev_hold": 5, "prog_min": 0.20, "prog_hold": 20, "start": "2026-11-13"}
 
 
@@ -180,6 +180,9 @@ def replay(s):
                 log(s, ds, f"見送り {p['name']}: 枠がいっぱい"); continue
             buy = op * (1 + c["slippage"])
             sh = int(min(eq * c["per_pos"], s["cash"]) / buy // c["lot"] * c["lot"])
+            # 1社分（資金の1/8）では100株に届かなくても、資金の範囲で手が届くなら100株だけ買う（1社は資金の25%まで）
+            if sh < c["lot"] and c["lot"] * buy <= min(eq * c.get("max_pos", 0.25), s["cash"]):
+                sh = c["lot"]
             if sh < c["lot"]:
                 log(s, ds, f"見送り {p['name']}: 100株を買うお金が足りない（{op * 100:,.0f}円）"); continue
             s["cash"] -= sh * buy
