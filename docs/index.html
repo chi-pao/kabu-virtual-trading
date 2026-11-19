@@ -452,7 +452,7 @@ async function loadLive() {
     h += `<div class="muted"><b>いま持っている株</b></div>` + L.open.map(p => `<div class="pc" data-code="${p.code}" onclick="showChart('${p.code}')">
       <div class="row"><b>${esc(p.name)} ${p.shares}株</b><b class="${cls(p.pnl)}">${sgn(p.pnl)}</b></div>
       <div class="row muted"><span>${p.time}に${num(p.entry)}円で${p.side}</span><span>今 ${num(p.price)}円</span></div>
-      <div class="muted">${L.mode === "earnings" ? esc(p.setup) + "・大引けで売る" : `損切り ${num(p.stop)}円${p.be ? "（買値まで引き上げ済み）" : ""}・利確 ${num(p.target)}円・${esc(L.flat_at)}までに必ず売る`}</div></div>`).join("");
+      <div class="muted">${L.mode === "earnings" ? esc(p.setup) + (p.side === "空売り" ? "・大引けで買い戻す" : "・大引けで売る") : `損切り ${num(p.stop)}円${p.be ? "（買値まで引き上げ済み）" : ""}・利確 ${num(p.target)}円・${esc(L.flat_at)}までに必ず売る`}</div></div>`).join("");
   }
   if ((L.pending || []).length) h += `<div class="muted">次の5分足で注文：${L.pending.map(o => esc(o.name) + " " + o.shares + "株 " + o.side).join("、")}</div>`;
   if (L.trades.length) {
