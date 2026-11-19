@@ -16,7 +16,8 @@ RULE = {"gap_min": 0.0, "gap_max": 0.05, "per_trade": 300000, "max_trades": 3, "
 # 前日の急騰を見て朝に飛びつく買いが多く、寄りが一日の高値になりやすい（「寄り天」）ことをねらう。
 # 6年分の確認（費用0.2%引き後・1日3社・1社30万円）：毎年プラス、前半4年+145%・後半2年+116%、落ち込み-17%、売買した日は約4日に3日。
 # ただし、残っている会社だけのデータ・空売りできる株か（貸借銘柄・一般信用の在庫）は確かめていない。決算の買いを優先し、余った枠で行う。
-FADE = {"r1_min": 0.07, "gap_min": 0.005, "min_turnover": 1e9, "min_price": 200}
+# 2026-11-19 ユーザーの判断で空売りは行わない（on=False）。調べた結果と仕組みは残しておく。
+FADE = {"on": False, "r1_min": 0.07, "gap_min": 0.005, "min_turnover": 1e9, "min_price": 200}
 
 
 def fade_plan(day, px, exclude=()):
@@ -80,8 +81,10 @@ def run_days(eng, todo):
     cs = cands()
     uni = universe()
     # 全部の株は日足だけを分けて読み、最近+7%超上がった日がある株だけを、最新の日まで（5分足で補って）読み直す
-    pxd = data.load_prices_chunked(sorted(uni), period="3mo")
-    hot = {k for k, d0 in pxd.items() if len(d0) > 2 and (d0["Close"].pct_change().iloc[-30:] > FADE["r1_min"]).any()}
+    hot = set()
+    if FADE["on"]:
+        pxd = data.load_prices_chunked(sorted(uni), period="3mo")
+        hot = {k for k, d0 in pxd.items() if len(d0) > 2 and (d0["Close"].pct_change().iloc[-30:] > FADE["r1_min"]).any()}
     codes = sorted({c["code"] for c in cs} | hot)
     px = data.load_prices_fresh(codes, period="3mo") if codes else {}
     days = data.load_prices_fresh([data.INDEX], period="3mo")[data.INDEX].index
@@ -108,7 +111,7 @@ def run_days(eng, todo):
             eng["log"].append(f"{day} 決算デイトレ {c['name']} {sh}株 {buy:,.0f}→{sell:,.0f}円 損益{pnl:+,.0f}円")
         # 余った枠で、急騰の翌朝の空売り
         used = {c["code"] for c, *_ in ok}
-        for code, op, r1, gap in fade_plan(d, px, used)[:max(0, RULE["max_trades"] - n)]:
+        for code, op, r1, gap in (fade_plan(d, px, used)[:max(0, RULE["max_trades"] - n)] if FADE["on"] else []):
             ent = op * (1 - RULE["slippage"])
             sh = int(min(RULE["per_trade"], eng["cash"]) / ent // 100 * 100)
             if sh < 100:
@@ -126,7 +129,9 @@ def run_days(eng, todo):
         eng["cash"] += pnl_day
         eng["days"].append({"date": str(day), "pnl": round(pnl_day), "trades": n, "wins": wins, "equity": round(eng["cash"])})
     # 次の営業日に空売りの候補になりうる株（前日+7%超）を覚えておく（取引時間中の画面で、全部の株を読まずに済むように）
-    if len(days):
+    if not FADE["on"]:
+        eng.pop("fade_watch", None)
+    elif len(days):
         last, watch = days[-1], {}
         for code, d0 in px.items():
             if last not in d0.index:
@@ -166,7 +171,7 @@ def live(eng, capital):
                       "be": False, "setup": f"{c['why']}・朝{gap * 100:+.1f}%"})
     # 余った枠で、急騰の翌朝の空売り（前日の終わりに覚えておいた株だけを見る）
     fw = eng.get("fade_watch") or {}
-    if fw.get("codes") and str(day.date()) > fw.get("after", ""):
+    if FADE["on"] and fw.get("codes") and str(day.date()) > fw.get("after", ""):
         pw = data.load_prices_fresh(sorted(fw["codes"]), period="3mo")
         used = {c["code"] for c, *_ in ok}
         for code, op, r1, gap in fade_plan(day, pw, used)[:max(0, RULE["max_trades"] - len(opens))]:
