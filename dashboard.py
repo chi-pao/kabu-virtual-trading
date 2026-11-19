@@ -210,9 +210,16 @@ def scorecard(eng, equity, capital, dst, est):
         cap_new = cfg_d["capital"] + sum(t["pnl"] for t in old)
         eq_new = [d["equity"] for d in de["days"] if sw and d["date"] >= sw]
         if sw:
-            rows.append({"name": "決算デイトレ", "account": "特定（NISAは売ると枠が戻らないので不向き）", "hold": "その日のうち",
-                         "evidence": "過去2年 +44%（前半+18%・後半+22%）・落ち込み-10%",
-                         **_metrics([t["pnl"] for t in new], [cap_new] + eq_new, cap_new, -0.10)})
+            # 同じ100万円で2つのやり方を行うので、成績はやり方ごとに分けて数える（資金の推移は損益の積み上げ）
+            for nm, side, ev, acc in [
+                ("決算デイトレ（買い）", "買い", "過去2年 +44%（前半+18%・後半+22%）・落ち込み-10%", "特定（NISAは売ると枠が戻らないので不向き）"),
+                ("寄り天ねらい（空売り）", "空売り", "過去6年 毎年プラス（前半4年+145%・後半2年+116%）・落ち込み-17%", "信用口座（空売りはNISA不可）")]:
+                sub = [t for t in new if t.get("side", "買い") == side]
+                eq_s, acc_v = [cap_new], cap_new
+                for t in sub:
+                    acc_v += t["pnl"]; eq_s.append(acc_v)
+                rows.append({"name": nm, "account": acc, "hold": "その日のうち", "evidence": ev,
+                             **_metrics([t["pnl"] for t in sub], eq_s, cap_new, -0.10)})
         m = _metrics([t["pnl"] for t in old], [cfg_d["capital"]] + [d["equity"] for d in de["days"] if not sw or d["date"] < sw],
                      cfg_d["capital"], -0.10)
         rows.append({"name": "旧デイトレ（寄り付きブレイク）", "account": "特定", "hold": "その日のうち",

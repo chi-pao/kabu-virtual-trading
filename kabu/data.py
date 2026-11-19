@@ -33,6 +33,22 @@ def load_prices(codes, period="6y"):
     return out
 
 
+def load_prices_chunked(codes, period="3mo", size=200, pause=3.0):
+    """たくさんの株を、少しずつ分けて読む（無料データは一度に読みすぎると断られるため）"""
+    import time
+    out = {}
+    codes = list(codes)
+    for i in range(0, len(codes), size):
+        part = codes[i:i + size]
+        got = load_prices(part, period=period)
+        if len(got) < len(part) * 0.5:      # 断られたら少し待って1回だけやり直す
+            time.sleep(pause * 5)
+            got.update(load_prices([c for c in part if c not in got], period=period))
+        out.update(got)
+        time.sleep(pause)
+    return out
+
+
 def load_prices_fresh(codes, period="3mo"):
     """日足を取り、日足にまだ出ていない最近の日を5分足から作って足す（無料データは日足の更新が遅れることがあるため）"""
     out = load_prices(codes, period=period)
