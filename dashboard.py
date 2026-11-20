@@ -223,6 +223,19 @@ def scorecard(eng, equity, capital, dst, est):
                      cfg_d["capital"], -0.10)
         rows.append({"name": "旧デイトレ（寄り付きブレイク）", "account": "特定", "hold": "その日のうち",
                      "evidence": "過去60日の確認でも負け", **m, "status": "停止（11/17に決算デイトレへ交代）" if sw else m["status"]})
+    # いろいろなやり方の同時テスト（experiments.py、それぞれ仮想の100万円）
+    xp = ROOT / "実験" / "state.json"
+    if xp.exists():
+        import experiments as X
+        xs = json.loads(xp.read_text(encoding="utf-8"))
+        for k, w in xs["wallets"].items():
+            if k not in X.STRATS:
+                continue
+            m = _metrics([t["pnl"] for t in w["trades"]], [X.CAPITAL] + [v for _, v in w["equity"]], X.CAPITAL, -0.25)
+            held = "・".join(p["name"] for p in w["positions"].values())
+            rows.append({"name": X.STRATS[k]["name"], "account": "NISA向き（毎月の入れ替えは特定）",
+                         "hold": "8社を持ち、毎月入れ替え", "evidence": X.STRATS[k]["evidence"] + (f"／今の持ち株：{held}" if held else ""),
+                         **m, "status": m["status"] if w["equity"] else f"{xs.get('start')}に開始（翌朝から売買）"})
     m = _metrics([t["pnl"] for t in eng["trades"]], [v for _, v in eng["equity"]] + [equity], capital, -0.20)
     rows.append({"name": "中期（高値ブレイク）", "account": "NISA向き", "hold": "数週間〜数か月",
                  "evidence": "当時のデータだけで試すと5年で±0%（実力が弱い）", **m})
